@@ -208,10 +208,10 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     body_lines.append("<i>Parimutuel · winners split the losers' pool</i>")
     body_lines.append("")  # blank line at the BOTTOM of body
 
-    # Telegram often trims literal leading "\n" in captions. Zero-width
-    # spaces force the client to preserve two visual spacer lines above the
+    # Telegram often trims literal leading "\n" in captions. A zero-width
+    # space forces the client to preserve one visual spacer line above the
     # info card, so it no longer sticks to the photo.
-    top_spacer = "\u200b\n\u200b\n"
+    top_spacer = "\u200b\n"
     return top_spacer + info_card + "\n" + "\n".join(body_lines)
 
 
