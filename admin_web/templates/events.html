@@ -4,7 +4,47 @@
 
 {% block content %}
 <div class="card" style="margin-bottom:16px;">
-    <div class="card-title">Create new event</div>
+    <div class="card-title">✨ AI suggest 5 candidates</div>
+    <form method="get" action="/events" class="form-row" style="margin-bottom:0;">
+        <input name="ai_brief" value="{{ ai_brief }}"
+               placeholder="(optional) brief: e.g. 'tomorrow is Champions League final', 'BTC just crossed $115k'..."
+               style="flex:1;">
+        <button class="btn primary" type="submit">Generate ✨</button>
+        {% if ai_brief %}<a href="/events" class="btn">Clear</a>{% endif %}
+    </form>
+    {% if ai_error %}<div style="color:var(--red);margin-top:8px;font-size:12px;">{{ ai_error }}</div>{% endif %}
+
+    {% if suggestions %}
+    <div style="margin-top:16px;display:grid;gap:10px;">
+        {% for c in suggestions %}
+        <details class="card" style="background:var(--surface-2);padding:12px;">
+            <summary style="cursor:pointer;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;">
+                <span class="badge blue">{{ c.category|default("other") }}</span>
+                <span class="badge">🌶 {{ c.spice_score|default("?") }}/10</span>
+                <span class="badge">{{ c.close_in_hours|default(24) }}h</span>
+                <span style="flex:1;">{{ c.title }}</span>
+                <span class="muted" style="font-size:11px;">click to expand ↓</span>
+            </summary>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px;">
+                <div class="muted" style="margin-bottom:6px;">{{ c.description }}</div>
+                <div class="mono" style="font-size:11px;color:var(--text-secondary);">Source: {{ c.evidence_source|default("-") }}</div>
+                <form method="post" action="/events/ai_suggest_pick" style="margin-top:10px;">
+                    <input type="hidden" name="title" value="{{ c.title }}">
+                    <input type="hidden" name="description" value="{{ c.description }}">
+                    <input type="hidden" name="yes_label" value="{{ c.yes_label|default('YES') }}">
+                    <input type="hidden" name="no_label" value="{{ c.no_label|default('NO') }}">
+                    <input type="hidden" name="close_in_hours" value="{{ c.close_in_hours|default(24) }}">
+                    <button class="btn primary small" type="submit">Use this → create draft</button>
+                </form>
+            </div>
+        </details>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Create new event (manual)</div>
     <form method="post" action="/events/new">
         <div class="form-group">
             <label>Title</label>

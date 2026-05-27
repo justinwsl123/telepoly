@@ -179,6 +179,22 @@ class WalletAddress(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+# ----------------------------- 池子时序快照（用于走势图） -----------------------------
+class PoolTimepoint(Base):
+    """每分钟一次池子快照，是赔率走势图的数据源。
+
+    保留策略：事件结算后保留 30 天用于历史回溯，更老的可被清理任务删除。
+    """
+    __tablename__ = "pool_timepoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(Integer, ForeignKey("events.id"), index=True)
+    pool_yes_micro: Mapped[int] = mapped_column(BigInteger, default=0)
+    pool_no_micro: Mapped[int] = mapped_column(BigInteger, default=0)
+    n_bets: Mapped[int] = mapped_column(Integer, default=0)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
 # ----------------------------- 事件结算快照 -----------------------------
 class EventSnapshot(Base):
     __tablename__ = "event_snapshots"

@@ -17,6 +17,8 @@ from telegram.ext import ContextTypes
 
 from db.session import get_session
 from core.events import events_to_lock, lock_event
+from core.leaderboard import render_hall_of_fame, top_winners, yesterday_window
+from core.snapshots import capture_open_events, cleanup_old_timepoints
 from telepoly_bot.config import settings
 
 
@@ -63,7 +65,56 @@ async def daily_event_check(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             pass
 
 
+async def capture_pool_snapshots(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """每分钟一次池子快照，给走势图供数。"""
+    try:
+        with get_session() as s:
+            n = capture_open_events(s)
+        if n:
+            logger.debug(f"[snapshots] captured {n} open events")
+    except Exception as e:
+        logger.warning(f"snapshot capture failed: {e}")
+
+
+async def cleanup_snapshots(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        with get_session() as s:
+            n = cleanup_old_timepoints(s, older_than_days=30)
+        if n:
+            logger.info(f"[snapshots] cleaned {n} old rows")
+    except Exception as e:
+        logger.warning(f"snapshot cleanup failed: {e}")
+
+
+async def hall_of_fame_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """每天 23:00 UTC 推 Top 3 赢家到频道（仅主 bot 实例发，避免矩阵重复）。"""
+    if settings.bot_id != "main":
+        return
+    if not settings.announce_channel_id:
+        return
+    start, end = yesterday_window()
+    with get_session() as s:
+        winners = top_winners(s, top_n=3, start=start, end=end)
+    text = render_hall_of_fame(winners, start.strftime("%b %d"))
+    if not text:
+        logger.info("[hof] no winners yesterday, skip")
+        return
+    try:
+        await ctx.bot.send_message(
+            chat_id=settings.announce_channel_id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN,
+            disable_web_page_preview=True,
+        )
+        logger.success(f"[hof] posted {len(winners)} winners to channel")
+    except Exception as e:
+        logger.error(f"hof channel send failed: {e}")
+
+
 def register_jobs(app) -> None:
     jq = app.job_queue
     jq.run_repeating(auto_lock_events, interval=60, first=10, name="auto_lock_events")
+    jq.run_repeating(capture_pool_snapshots, interval=60, first=15, name="capture_pool_snapshots")
     jq.run_daily(daily_event_check, time=time(9, 0, tzinfo=timezone.utc), name="daily_event_check")
+    jq.run_daily(hall_of_fame_job, time=time(23, 0, tzinfo=timezone.utc), name="hall_of_fame")
+    jq.run_daily(cleanup_snapshots, time=time(3, 0, tzinfo=timezone.utc), name="cleanup_snapshots")

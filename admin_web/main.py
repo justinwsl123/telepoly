@@ -47,11 +47,26 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static") or path in ("/login", "/healthz"):
+    # 公开路径：登录页、静态资源、健康检查、Mini App（用 TG initData 自鉴权）
+    if (
+        path.startswith("/static")
+        or path.startswith("/miniapp")
+        or path.startswith("/api/")  # 跨 bot 钱包 API（API_KEY 鉴权）
+        or path in ("/login", "/healthz")
+    ):
         return await call_next(request)
     if not auth_mod.is_authed(request):
         return RedirectResponse("/login", status_code=303)
     return await call_next(request)
+
+
+# Mini App 路由（Telegram WebApp）
+from admin_web.miniapp import router as miniapp_router
+app.include_router(miniapp_router)
+
+# 跨 Bot 钱包 API（HTTP X-Wallet-Api-Key 鉴权）
+from admin_web.wallet_api import router as wallet_api_router
+app.include_router(wallet_api_router)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -120,12 +135,47 @@ async def dashboard(request: Request):
 
 # ----------------------------- 事件 -----------------------------
 @app.get("/events", response_class=HTMLResponse)
-async def events_page(request: Request):
+async def events_page(request: Request, ai_brief: str | None = None):
+    suggestions: list[dict] = []
+    ai_error: str | None = None
+    if ai_brief is not None:
+        # 用户点了 AI Suggest（query string ai_brief 触发）
+        from integrations.aiberm import is_enabled, suggest_events
+        if not is_enabled():
+            ai_error = "LLM_API_KEY not configured"
+        else:
+            suggestions = suggest_events(ai_brief)
+            if not suggestions:
+                ai_error = "AI returned no valid candidates, try again with a clearer brief"
+
     with get_session() as s:
         events = list(s.scalars(select(Event).order_by(desc(Event.id)).limit(50)))
     return templates.TemplateResponse(request, "events.html", {
-        "active": "events", "events": events,
+        "active": "events",
+        "events": events,
+        "suggestions": suggestions,
+        "ai_error": ai_error,
+        "ai_brief": ai_brief or "",
     })
+
+
+@app.post("/events/ai_suggest_pick")
+async def events_ai_pick(
+    title: str = Form(...),
+    description: str = Form(""),
+    yes_label: str = Form("YES"),
+    no_label: str = Form("NO"),
+    close_in_hours: float = Form(24),
+):
+    """从 AI 候选直接 fork 成 draft。"""
+    with get_session() as s:
+        create_event(
+            s, title=title, description=description,
+            yes_label=yes_label, no_label=no_label,
+            close_at=datetime.utcnow() + timedelta(hours=close_in_hours),
+            fee_bps=settings.event_fee_bps,
+        )
+    return RedirectResponse("/events", status_code=303)
 
 
 @app.post("/events/new")

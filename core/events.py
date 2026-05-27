@@ -70,6 +70,9 @@ def open_event(session: Session, event: Event) -> None:
     transition(session, event, "open")
     if event.open_at is None:
         event.open_at = datetime.utcnow()
+    # 写一条"零点"快照，保证走势图起点有数据
+    from core.snapshots import capture_event
+    capture_event(session, event)
 
 
 def lock_event(session: Session, event: Event) -> None:

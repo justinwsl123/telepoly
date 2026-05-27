@@ -40,12 +40,40 @@ async def _send_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         yes_odds, no_odds = implied_odds(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps)
         text = render_event_card(ev, lang)
         kb = event_keyboard(ev.id, ev.yes_label, ev.no_label, yes_odds, no_odds)
+        ev_id = ev.id
+
+    chart = await _render_event_chart(ev_id)
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+        # 从按钮触发的更新：删旧 → 发新（带图）
+        try:
+            await update.callback_query.message.delete()
+        except Exception:
+            pass
+        await ctx.bot.send_photo(chat_id=update.effective_chat.id,
+                                 photo=chart, caption=text,
+                                 parse_mode="Markdown", reply_markup=kb)
     else:
-        await msg.reply_markdown(text, reply_markup=kb)
+        if chart:
+            await msg.reply_photo(photo=chart, caption=text,
+                                  parse_mode="Markdown", reply_markup=kb)
+        else:
+            await msg.reply_markdown(text, reply_markup=kb)
+
+
+async def _render_event_chart(event_id: int) -> bytes | None:
+    """渲染走势图。失败时返回 None，调用方降级到纯文本。"""
+    try:
+        from core.snapshots import fetch_timeline
+        from telepoly_bot.charts import render_pool_timeline
+        with get_session() as s:
+            ev = s.get(Event, event_id)
+            points = fetch_timeline(s, event_id)
+            return render_pool_timeline(points, title=ev.title if ev else "",
+                                         fee_bps=ev.fee_bps if ev else 500)
+    except Exception:
+        return None
 
 
 async def cb_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:

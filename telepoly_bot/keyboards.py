@@ -1,26 +1,40 @@
 """InlineKeyboard 集中管理。"""
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import os
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+
+
+def _miniapp_url(event_id: int) -> str | None:
+    """Mini App 链接（HTTPS）。MINIAPP_BASE_URL=Railway public URL，未配则不显示按钮。"""
+    base = os.getenv("MINIAPP_BASE_URL", "").rstrip("/")
+    if not base or not base.startswith("https://"):
+        return None
+    return f"{base}/miniapp/event/{event_id}"
 
 
 def event_keyboard(event_id: int, yes_label: str = "YES", no_label: str = "NO",
                    yes_odds: float = 0.0, no_odds: float = 0.0) -> InlineKeyboardMarkup:
     yes_text = f"🟢 {yes_label}" + (f"  {yes_odds:.2f}x" if yes_odds else "")
     no_text  = f"🔴 {no_label}"  + (f"  {no_odds:.2f}x"  if no_odds else "")
-    return InlineKeyboardMarkup([
+
+    rows = [
         [
             InlineKeyboardButton(yes_text, callback_data=f"bet:{event_id}:yes"),
             InlineKeyboardButton(no_text,  callback_data=f"bet:{event_id}:no"),
         ],
+    ]
+    mini = _miniapp_url(event_id)
+    if mini:
+        rows.append([InlineKeyboardButton("📈 Live chart & bet", web_app=WebAppInfo(url=mini))])
+    rows += [
         [
             InlineKeyboardButton("📊 详情 / Details", callback_data=f"detail:{event_id}"),
             InlineKeyboardButton("👤 我的 / Me", callback_data="me"),
         ],
-        [
-            InlineKeyboardButton("💵 充值 / Deposit", callback_data="deposit"),
-        ],
-    ])
+        [InlineKeyboardButton("💵 充值 / Deposit", callback_data="deposit")],
+    ]
+    return InlineKeyboardMarkup(rows)
 
 
 def amount_keyboard(event_id: int, side: str) -> InlineKeyboardMarkup:
