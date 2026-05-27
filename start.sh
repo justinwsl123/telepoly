@@ -37,9 +37,6 @@ if [ "$SEED_DEMO_EVENT" != "0" ]; then
   $PY -m scripts.seed_demo || echo "[seed] WARNING: seed_demo failed (continuing)"
 fi
 
-# Debug: dump current users table so we can see what's actually persisted.
-$PY -m scripts.debug_users || true
-
 PIDS=()
 
 # 2) 主 Bot（默认 BOT_ID=main）
