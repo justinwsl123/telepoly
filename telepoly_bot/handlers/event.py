@@ -19,7 +19,7 @@ from telepoly_bot.keyboards import (
     menu_keyboard,
 )
 from telepoly_bot.texts import t
-from telepoly_bot.views import render_event_card
+from telepoly_bot.views import cover_photo_input, render_event_card
 
 # Per-user state for "custom amount" input: user_id → (event_id, side)
 PENDING_AMOUNT: dict[int, tuple[int, str]] = {}
@@ -73,43 +73,43 @@ async def send_today(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int)
 
 
 async def _send_event_card(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, event_id: int) -> None:
-    """Render and send the photo+caption event card with YES/NO buttons."""
+    """Render and send the cover photo + ASCII info-card caption + bet buttons.
+
+    The cover image is static (Telegram cannot edit photos in place); the
+    caption is built from a Markdown code block + live odds and CAN be
+    refreshed later via `edit_message_caption` whenever the pool moves.
+    """
     with get_session() as s:
         ev = s.get(Event, event_id)
         if not ev:
             await ctx.bot.send_message(chat_id=chat_id, text=t("no_active_event"),
                                        parse_mode="Markdown", reply_markup=menu_keyboard())
             return
+        # Pull the trend snapshots inside the same session so the caption
+        # shows '54% → 57% → 59% → 61% → 62%' style history.
+        timeline = []
+        try:
+            from core.snapshots import fetch_timeline
+            timeline = fetch_timeline(s, event_id)
+        except Exception:
+            timeline = []
         yes_odds, no_odds = implied_odds(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps)
-        text = render_event_card(ev)
+        text = render_event_card(ev, timeline=timeline)
         kb = event_keyboard(ev.id, ev.yes_label, ev.no_label, yes_odds, no_odds)
+        photo = cover_photo_input(ev)
 
-    chart = await _render_event_chart(event_id)
+    if photo is not None:
+        try:
+            await ctx.bot.send_photo(chat_id=chat_id, photo=photo, caption=text,
+                                     parse_mode="Markdown", reply_markup=kb)
+            return
+        except Exception:
+            # Cover fetch failed — degrade to text-only rather than skip the card.
+            pass
 
-    if chart:
-        await ctx.bot.send_photo(chat_id=chat_id, photo=chart, caption=text,
-                                 parse_mode="Markdown", reply_markup=kb)
-    else:
-        await ctx.bot.send_message(chat_id=chat_id, text=text,
-                                   parse_mode="Markdown", reply_markup=kb)
-
-
-async def _render_event_chart(event_id: int) -> bytes | None:
-    """Render the pool-trend chart. Return None on any failure → caller degrades to text."""
-    try:
-        from core.snapshots import fetch_timeline
-        from telepoly_bot.charts import render_pool_timeline
-        with get_session() as s:
-            ev = s.get(Event, event_id)
-            points = fetch_timeline(s, event_id)
-            return render_pool_timeline(
-                points,
-                title=ev.title if ev else "",
-                fee_bps=ev.fee_bps if ev else 500,
-                close_at=ev.close_at if ev else None,
-            )
-    except Exception:
-        return None
+    await ctx.bot.send_message(chat_id=chat_id, text=text,
+                               parse_mode="Markdown", reply_markup=kb,
+                               disable_web_page_preview=True)
 
 
 # ----------------------------------------------------------------------

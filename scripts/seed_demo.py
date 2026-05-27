@@ -45,6 +45,9 @@ DEMO_DESC = (
 )
 DEMO_YES_LABEL = "Scores"
 DEMO_NO_LABEL = "No goal"
+# Cover image (read from the repo at runtime; not refreshed afterwards).
+# Relative to the repo root, so it works both locally and on Railway.
+DEMO_COVER_URL = "assets/cr7.jpg"
 
 # Portugal's first match kick-off (UTC). Adjust once FIFA publishes the
 # definitive fixture; the script will simply update the existing demo on
@@ -135,6 +138,7 @@ def seed() -> int:
         ev.close_at = DEMO_CLOSE_AT_UTC
         ev.yes_label = DEMO_YES_LABEL
         ev.no_label = DEMO_NO_LABEL
+        ev.cover_url = DEMO_COVER_URL
         ev.pool_yes_micro = yes_micro
         ev.pool_no_micro = no_micro
         ev.state = "open"
