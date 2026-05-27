@@ -188,10 +188,10 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     delta = _delta_line(timeline)
     if delta:
         card_lines.append(f"🚀 {delta}")
-    # No <blockquote> wrapper → no slim left bar, no inner padding, full
-    # message-bubble width. Trade-off: also no background tint (Telegram's
-    # bg / bar / padding are bundled in one styling primitive).
-    info_card = "\n".join(card_lines)
+    # Telegram does not expose a "background only" primitive: the tinted
+    # block, slim left bar and padding are all bundled into <blockquote>.
+    # Keep it because the tinted block reads better than plain text.
+    info_card = "<blockquote>" + "\n".join(card_lines) + "</blockquote>"
 
     # --- body ---
     body_lines: list[str] = [
@@ -208,8 +208,11 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     body_lines.append("<i>Parimutuel · winners split the losers' pool</i>")
     body_lines.append("")  # blank line at the BOTTOM of body
 
-    # Leading blank line so the card doesn't stick to the photo above.
-    return "\n" + info_card + "\n" + "\n".join(body_lines)
+    # Telegram often trims literal leading "\n" in captions. Zero-width
+    # spaces force the client to preserve two visual spacer lines above the
+    # info card, so it no longer sticks to the photo.
+    top_spacer = "\u200b\n\u200b\n"
+    return top_spacer + info_card + "\n" + "\n".join(body_lines)
 
 
 def load_cover_bytes(event: Event) -> bytes | None:
