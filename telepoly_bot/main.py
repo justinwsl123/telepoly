@@ -51,7 +51,6 @@ def main() -> None:
     init_db()  # 幂等创建表
     app = build_app()
 
-    me_info = app.bot.username  # 可能为空（异步初始化前）
     logger.info(f"Bot username (configured): @{settings.telepoly_bot_username}")
     logger.info(f"Owners: {settings.owner_ids}")
     logger.info(f"Announce channel: {settings.announce_channel_id or '(none)'}")
