@@ -101,14 +101,14 @@ async def _send_event_card(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, event_i
     if photo is not None:
         try:
             await ctx.bot.send_photo(chat_id=chat_id, photo=photo, caption=text,
-                                     parse_mode="Markdown", reply_markup=kb)
+                                     parse_mode="HTML", reply_markup=kb)
             return
         except Exception:
             # Cover fetch failed — degrade to text-only rather than skip the card.
             pass
 
     await ctx.bot.send_message(chat_id=chat_id, text=text,
-                               parse_mode="Markdown", reply_markup=kb,
+                               parse_mode="HTML", reply_markup=kb,
                                disable_web_page_preview=True)
 
 

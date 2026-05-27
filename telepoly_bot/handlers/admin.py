@@ -118,7 +118,7 @@ async def cmd_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 m = await ctx.bot.send_message(
                     chat_id=settings.announce_channel_id,
-                    text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb,
+                    text=text, parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
                 ev.announce_channel_id = settings.announce_channel_id
                 ev.announce_message_id = m.message_id

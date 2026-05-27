@@ -29,6 +29,7 @@ Layout of the caption (rendered in monospace via a Markdown code-block):
 """
 from __future__ import annotations
 
+import html
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -73,15 +74,53 @@ def _fmt_countdown(close_at: datetime) -> str:
 
 
 def _trend_line(timeline: Sequence[dict] | None, max_points: int = 5) -> str | None:
-    """E.g. '54% → 57% → 59% → 61% → 62%' or None if not enough data."""
+    """E.g. '54% → 57% → 59% → 61% → 62%' or None if not enough data.
+
+    Samples points evenly across the TIME axis rather than the row index.
+    Otherwise a long flat tail (e.g. the per-minute snapshots after the
+    initial seeded curve) collapses the trend strip to '62% → 62% → 62%'.
+    Consecutive duplicate values are also collapsed so we never show
+    'X% → X%' twice in a row.
+    """
     if not timeline or len(timeline) < 2:
         return None
-    if len(timeline) > max_points:
-        step = (len(timeline) - 1) / (max_points - 1)
-        sampled = [timeline[round(i * step)] for i in range(max_points)]
-    else:
+
+    if len(timeline) <= max_points:
         sampled = list(timeline)
-    return " → ".join(f"{round(p['yes_share'] * 100)}%" for p in sampled)
+    else:
+        try:
+            t0 = datetime.fromisoformat(timeline[0]["t"])
+            tN = datetime.fromisoformat(timeline[-1]["t"])
+        except Exception:
+            t0 = tN = None
+
+        if t0 and tN and tN > t0:
+            span = (tN - t0).total_seconds()
+            targets = [t0.timestamp() + span * i / (max_points - 1)
+                       for i in range(max_points)]
+            sampled: list[dict] = []
+            j = 0
+            for tgt in targets:
+                # Walk through the timeline picking the first row whose
+                # captured_at is >= the target timestamp.
+                while j < len(timeline) - 1 and \
+                        datetime.fromisoformat(timeline[j]["t"]).timestamp() < tgt:
+                    j += 1
+                sampled.append(timeline[j])
+        else:
+            # Fall back to index sampling if timestamps are unusable.
+            step = (len(timeline) - 1) / (max_points - 1)
+            sampled = [timeline[round(i * step)] for i in range(max_points)]
+
+    pcts: list[int] = []
+    for p in sampled:
+        v = round(p["yes_share"] * 100)
+        if pcts and pcts[-1] == v:
+            continue
+        pcts.append(v)
+    if len(pcts) < 2:
+        return None
+    return " → ".join(f"{v}%" for v in pcts)
 
 
 def _delta_line(timeline: Sequence[dict] | None) -> str | None:
@@ -97,23 +136,24 @@ def _delta_line(timeline: Sequence[dict] | None) -> str | None:
 
 # ---------- public API -----------------------------------------------------
 
-_DIVIDER = "━━━━━━━━━━━━"  # short, visible without monospace
+_DIVIDER = "━━━━━━━━━━━━"  # short, visible at the caption's default font
 
 
 def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = None) -> str:
-    """Build the caption sent under the cover image (or as standalone message).
+    """Build the caption sent under the cover image.
 
-    Style choices (user-driven):
-      • NO Markdown code block — Telegram now decorates triple-backticks
-        with a left dark border + `</>` icon + small monospace font, which
-        the user explicitly rejected. We instead use regular caption text
-        with emoji-led structure so the font is full-size and the line
-        spacing is generous.
-      • Total pool is bolded and given the biggest emoji to read as the
-        headline number; live odds use compact 'U' suffix instead of
-        'USDT' so the side+odds+pool line stays on one row on phones.
-      • `timeline` (snapshots from core.snapshots.fetch_timeline) drives
-        the optional trend strip ('54% → 59% → 62%') and Δ-since-open line.
+    OUTPUT FORMAT: HTML (use parse_mode="HTML" when sending).
+
+    Why HTML instead of Markdown:
+      • The info-card block needs a tinted background to read as a "card"
+        but WITHOUT the </> code-tag icon Telegram now adds to ```...```.
+        HTML <blockquote> gives us exactly that — bg-tint + slim left bar,
+        no </> button, regular caption font size (so '62% YES ▰▰▰▰▰▰▱▱▱▱'
+        no longer wraps on phones).
+      • Leading blank line so the caption breathes a bit off the photo.
+
+    `timeline` (from core.snapshots.fetch_timeline) drives the trend strip
+    and Δ-since-open line; both gracefully skipped when not available.
     """
     yes_odds, no_odds = implied_odds(event.pool_yes_micro, event.pool_no_micro, event.fee_bps)
     total_pool = event.pool_yes_micro + event.pool_no_micro
@@ -123,49 +163,47 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     countdown = _fmt_countdown(event.close_at)
     live_or_closed = "🔴 LIVE" if countdown != "CLOSED" else "⚫ CLOSED"
     pool_str = _fmt_pool_number(total_pool / 1_000_000)
-
-    desc = (event.description or "").strip()
     close_str = event.close_at.replace(tzinfo=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    yes_pool_str = fmt_usdt(event.pool_yes_micro, "")
-    no_pool_str  = fmt_usdt(event.pool_no_micro, "")
+    # Anything user-controlled goes through html.escape so '<' etc. don't
+    # break the HTML parser. Numbers / emojis / arrows are HTML-safe.
+    e_title  = html.escape(event.title or "")
+    e_desc   = html.escape((event.description or "").strip())
+    e_yes_l  = html.escape(event.yes_label or "YES")
+    e_no_l   = html.escape(event.no_label  or "NO")
+    yes_pool = fmt_usdt(event.pool_yes_micro, "")
+    no_pool  = fmt_usdt(event.pool_no_micro, "")
 
-    parts: list[str] = []
-
-    # Header — pool number is THE headline.
-    parts.append(f"💰 *{pool_str} USDT*  ·  TOTAL POOL")
-    parts.append(f"{live_or_closed}  ·  ⏳ {countdown}")
-    parts.append(_DIVIDER)
-
-    # Gauge band — big YES%, then optional trend + delta.
-    parts.append(f"📊 *{yes_pct}% YES*   {_bar(yes_share)}")
+    # --- info-card block (rendered with bg tint by Telegram) ---
+    card_lines: list[str] = [
+        f"💰 <b>{pool_str} USDT</b>  ·  TOTAL POOL",
+        f"{live_or_closed}  ·  ⏳ {countdown}",
+        _DIVIDER,
+        f"📊 <b>{yes_pct}% YES</b>   {_bar(yes_share)}",
+    ]
     trend = _trend_line(timeline)
     if trend:
-        parts.append(f"📈 {trend}")
+        card_lines.append(f"📈 {trend}")
     delta = _delta_line(timeline)
     if delta:
-        parts.append(f"🚀 {delta}")
+        card_lines.append(f"🚀 {delta}")
+    info_card = "<blockquote>" + "\n".join(card_lines) + "</blockquote>"
 
-    parts.append("")  # one blank line before title
+    # --- body ---
+    body_lines: list[str] = [
+        f"🎯 <b>{e_title}</b>",
+    ]
+    if e_desc:
+        body_lines.append(f"<i>{e_desc}</i>")
+    body_lines.append("")  # blank line before odds
+    body_lines.append(f"🟢 {e_yes_l} → <b>{yes_odds:.2f}x</b>  ({yes_pool} U)")
+    body_lines.append(f"🔴 {e_no_l} → <b>{no_odds:.2f}x</b>  ({no_pool} U)")
+    body_lines.append("")
+    body_lines.append(f"⏰ Closes: {close_str}")
+    body_lines.append("<i>Parimutuel · winners split the losers' pool</i>")
 
-    # Title + description.
-    parts.append(f"🎯 *{event.title}*")
-    if desc:
-        parts.append(f"_{desc}_")
-
-    parts.append("")  # one blank line before odds
-
-    # Live odds — tight spacing, 'U' instead of 'USDT' to fit one line.
-    parts.append(f"🟢 {event.yes_label} → *{yes_odds:.2f}x*  ({yes_pool_str} U)")
-    parts.append(f"🔴 {event.no_label} → *{no_odds:.2f}x*  ({no_pool_str} U)")
-
-    parts.append("")  # one blank line before footer
-
-    # Footer.
-    parts.append(f"⏰ Closes: {close_str}")
-    parts.append("_Parimutuel · winners split the losers' pool_")
-
-    return "\n".join(parts)
+    # Leading blank line so the card doesn't stick to the photo above.
+    return "\n" + info_card + "\n\n" + "\n".join(body_lines)
 
 
 def load_cover_bytes(event: Event) -> bytes | None:
