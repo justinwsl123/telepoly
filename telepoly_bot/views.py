@@ -97,12 +97,23 @@ def _delta_line(timeline: Sequence[dict] | None) -> str | None:
 
 # ---------- public API -----------------------------------------------------
 
-def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = None) -> str:
-    """Build the caption sent under the cover image (or as a standalone message).
+_DIVIDER = "━━━━━━━━━━━━"  # short, visible without monospace
 
-    `timeline` is an optional list of snapshots produced by
-    `core.snapshots.fetch_timeline(event.id)`; when provided we render a
-    Polymarket-style trend strip and "Δ since open" line.
+
+def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = None) -> str:
+    """Build the caption sent under the cover image (or as standalone message).
+
+    Style choices (user-driven):
+      • NO Markdown code block — Telegram now decorates triple-backticks
+        with a left dark border + `</>` icon + small monospace font, which
+        the user explicitly rejected. We instead use regular caption text
+        with emoji-led structure so the font is full-size and the line
+        spacing is generous.
+      • Total pool is bolded and given the biggest emoji to read as the
+        headline number; live odds use compact 'U' suffix instead of
+        'USDT' so the side+odds+pool line stays on one row on phones.
+      • `timeline` (snapshots from core.snapshots.fetch_timeline) drives
+        the optional trend strip ('54% → 59% → 62%') and Δ-since-open line.
     """
     yes_odds, no_odds = implied_odds(event.pool_yes_micro, event.pool_no_micro, event.fee_bps)
     total_pool = event.pool_yes_micro + event.pool_no_micro
@@ -110,48 +121,51 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     yes_pct = round(yes_share * 100)
 
     countdown = _fmt_countdown(event.close_at)
-    live_or_closed = "● LIVE" if countdown != "CLOSED" else "○ CLOSED"
+    live_or_closed = "🔴 LIVE" if countdown != "CLOSED" else "⚫ CLOSED"
+    pool_str = _fmt_pool_number(total_pool / 1_000_000)
 
-    # --- ASCII info-card (rendered in monospace via Markdown code block) ---
-    pool_line  = f"  {_fmt_pool_number(total_pool / 1_000_000)} USDT  ·  TOTAL POOL"
-    state_line = f"  {live_or_closed}  ·  {countdown}"
-    gauge_line = f"  {yes_pct}% YES   {_bar(yes_share)}"
-
-    card_lines = [pool_line, state_line, "  " + "─" * 34, gauge_line]
-    trend = _trend_line(timeline)
-    if trend:
-        card_lines.append(f"  {trend}")
-    delta = _delta_line(timeline)
-    if delta:
-        card_lines.append(f"  {delta}")
-
-    info_card = "```\n" + "\n".join(card_lines) + "\n```"
-
-    # --- Description block ---
     desc = (event.description or "").strip()
-    desc_block = f"\n_{desc}_\n" if desc else ""
-
-    # --- Live odds rows ---
-    yes_line = (
-        f"🟢 {event.yes_label:<10}  →  *{yes_odds:.2f}x*"
-        f"   ( {fmt_usdt(event.pool_yes_micro, '')} USDT )"
-    )
-    no_line = (
-        f"🔴 {event.no_label:<10}  →  *{no_odds:.2f}x*"
-        f"   ( {fmt_usdt(event.pool_no_micro, '')} USDT )"
-    )
-
     close_str = event.close_at.replace(tzinfo=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    return (
-        f"{info_card}\n"
-        f"🎯 *{event.title}*"
-        f"{desc_block}\n"
-        f"{yes_line}\n"
-        f"{no_line}\n\n"
-        f"⏰ Closes: {close_str}\n"
-        f"_Parimutuel · winners split the losers' pool._"
-    )
+    yes_pool_str = fmt_usdt(event.pool_yes_micro, "")
+    no_pool_str  = fmt_usdt(event.pool_no_micro, "")
+
+    parts: list[str] = []
+
+    # Header — pool number is THE headline.
+    parts.append(f"💰 *{pool_str} USDT*  ·  TOTAL POOL")
+    parts.append(f"{live_or_closed}  ·  ⏳ {countdown}")
+    parts.append(_DIVIDER)
+
+    # Gauge band — big YES%, then optional trend + delta.
+    parts.append(f"📊 *{yes_pct}% YES*   {_bar(yes_share)}")
+    trend = _trend_line(timeline)
+    if trend:
+        parts.append(f"📈 {trend}")
+    delta = _delta_line(timeline)
+    if delta:
+        parts.append(f"🚀 {delta}")
+
+    parts.append("")  # one blank line before title
+
+    # Title + description.
+    parts.append(f"🎯 *{event.title}*")
+    if desc:
+        parts.append(f"_{desc}_")
+
+    parts.append("")  # one blank line before odds
+
+    # Live odds — tight spacing, 'U' instead of 'USDT' to fit one line.
+    parts.append(f"🟢 {event.yes_label} → *{yes_odds:.2f}x*  ({yes_pool_str} U)")
+    parts.append(f"🔴 {event.no_label} → *{no_odds:.2f}x*  ({no_pool_str} U)")
+
+    parts.append("")  # one blank line before footer
+
+    # Footer.
+    parts.append(f"⏰ Closes: {close_str}")
+    parts.append("_Parimutuel · winners split the losers' pool_")
+
+    return "\n".join(parts)
 
 
 def load_cover_bytes(event: Event) -> bytes | None:
