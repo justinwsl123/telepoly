@@ -15,9 +15,15 @@ def _miniapp_url(event_id: int) -> str | None:
 
 def event_keyboard(event_id: int, yes_label: str = "YES", no_label: str = "NO",
                    yes_odds: float = 0.0, no_odds: float = 0.0) -> InlineKeyboardMarkup:
-    """Main event card keyboard: YES / NO bet buttons + navigation."""
-    yes_text = f"🟢 Bet {yes_label}" + (f"  {yes_odds:.2f}x" if yes_odds else "")
-    no_text  = f"🔴 Bet {no_label}"  + (f"  {no_odds:.2f}x"  if no_odds else "")
+    """Main event card keyboard: YES / NO bet buttons + navigation.
+
+    Odds args are accepted for backward compatibility but no longer rendered
+    on the buttons — tapping a side leads straight to the amount picker, so
+    showing a "live" multiplier on the button itself only confuses (the real
+    odds keep moving as the pool grows).
+    """
+    yes_text = f"🟢 Bet {yes_label}"
+    no_text  = f"🔴 Bet {no_label}"
 
     rows = [
         [
