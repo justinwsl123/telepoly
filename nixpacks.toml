@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python311", "uv"]
+
+[phases.install]
+cmds = ["uv sync --frozen --no-dev"]
+
+[start]
+cmd = "bash start.sh"

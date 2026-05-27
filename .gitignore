@@ -1,0 +1,34 @@
+# 环境/敏感
+.env
+.env.*
+!.env.example
+*.mnemonic
+*.seed
+
+# 数据 & 日志
+data/
+logs/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Build
+dist/
+build/
