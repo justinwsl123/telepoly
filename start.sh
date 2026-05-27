@@ -30,6 +30,12 @@ echo "=========================================================="
 # 1) 幂等建表
 $PY -m db.init
 
+# 1.5) 一次性 demo 事件 seed（SEED_DEMO_EVENT=1 时跑，自身幂等）
+if [ "$SEED_DEMO_EVENT" = "1" ]; then
+  echo "[seed] SEED_DEMO_EVENT=1 → seeding demo World Cup market…"
+  $PY -m scripts.seed_demo || echo "[seed] WARNING: seed_demo failed (continuing)"
+fi
+
 PIDS=()
 
 # 2) 主 Bot（默认 BOT_ID=main）

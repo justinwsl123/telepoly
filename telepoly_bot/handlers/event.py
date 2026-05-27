@@ -102,8 +102,12 @@ async def _render_event_chart(event_id: int) -> bytes | None:
         with get_session() as s:
             ev = s.get(Event, event_id)
             points = fetch_timeline(s, event_id)
-            return render_pool_timeline(points, title=ev.title if ev else "",
-                                         fee_bps=ev.fee_bps if ev else 500)
+            return render_pool_timeline(
+                points,
+                title=ev.title if ev else "",
+                fee_bps=ev.fee_bps if ev else 500,
+                close_at=ev.close_at if ev else None,
+            )
     except Exception:
         return None
 

@@ -17,14 +17,18 @@ def render_event_card(event: Event, *_unused) -> str:
     total_pool = event.pool_yes_micro + event.pool_no_micro
     close_str = event.close_at.replace(tzinfo=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+    desc = (event.description or "").strip()
+    desc_block = f"\n_{desc}_\n" if desc else ""
+
     return (
-        f"🎯 *{event.title}*\n\n"
-        f"{event.description or ''}\n\n"
+        f"💰 *TOTAL POOL · {fmt_usdt(total_pool)}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *{event.title}*"
+        f"{desc_block}\n"
+        f"🟢 {event.yes_label}  →  *{yes_odds:.2f}x*   ({fmt_usdt(event.pool_yes_micro, '')} USDT)\n"
+        f"🔴 {event.no_label}   →  *{no_odds:.2f}x*   ({fmt_usdt(event.pool_no_micro, '')} USDT)\n\n"
         f"⏰ Closes: {close_str}\n"
-        f"💰 Total pool: {fmt_usdt(total_pool)}\n"
-        f"🟢 {event.yes_label}: {fmt_usdt(event.pool_yes_micro, '')}  → *{yes_odds:.2f}x*\n"
-        f"🔴 {event.no_label}: {fmt_usdt(event.pool_no_micro, '')}  → *{no_odds:.2f}x*\n\n"
-        f"_The earlier you bet, the better the odds._"
+        f"_Parimutuel · winners split the losers' pool. The earlier you bet, the better the odds._"
     )
 
 

@@ -11,12 +11,34 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+from telegram import BotCommand
 from telegram.ext import Application, ApplicationBuilder
 
 from db.init import main as init_db
 from scheduler.jobs import register_jobs
 from telepoly_bot.config import settings
 from telepoly_bot.handlers import admin, event, me, referral, start, wallet
+
+
+# Shown in the Telegram blue "Menu" button next to the text input.
+# Order = display order. Keep them short — Telegram clips at ~30 chars.
+BOT_COMMANDS: list[tuple[str, str]] = [
+    ("start",   "Today's market"),
+    ("events",  "All open events"),
+    ("me",      "My balance & bets"),
+    ("deposit", "Deposit USDT"),
+    ("invite",  "Invite & earn"),
+]
+
+
+async def _post_init(application: Application) -> None:
+    """Register the bot's slash-command menu so Telegram shows the blue Menu button."""
+    cmds = [BotCommand(c, d) for c, d in BOT_COMMANDS]
+    try:
+        await application.bot.set_my_commands(cmds)
+        logger.info(f"Menu commands set: {[c for c, _ in BOT_COMMANDS]}")
+    except Exception as e:
+        logger.warning(f"Failed to set bot commands: {e}")
 
 
 def _setup_logging() -> None:
@@ -32,7 +54,12 @@ def build_app() -> Application:
         logger.error("TELEPOLY_BOT_TOKEN 未配置，无法启动")
         sys.exit(2)
 
-    app = ApplicationBuilder().token(settings.telepoly_bot_token).build()
+    app = (
+        ApplicationBuilder()
+        .token(settings.telepoly_bot_token)
+        .post_init(_post_init)
+        .build()
+    )
 
     start.register(app)
     event.register(app)
