@@ -176,10 +176,10 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
 
     # --- info-card block (rendered with bg tint by Telegram) ---
     card_lines: list[str] = [
-        f"💰 <b>{pool_str} USDT</b>  ·  TOTAL POOL",
+        f"💰 {pool_str} USDT  ·  TOTAL POOL",
         f"{live_or_closed}  ·  ⏳ {countdown}",
         _DIVIDER,
-        f"📊 <b>{yes_pct}% YES</b>   {_bar(yes_share)}",
+        f"📊 {yes_pct}% YES   {_bar(yes_share)}",
     ]
     # 4 points keeps the strip on a single line on phones (5 wrapped).
     trend = _trend_line(timeline, max_points=4)
