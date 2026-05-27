@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sign in · TelePoly</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="login-wrap">
+    <div class="card login-card">
+        <h1 class="login-title">TelePoly Admin</h1>
+        <p class="login-sub">Operations console</p>
+        <form method="post" action="/login">
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" autofocus required>
+            </div>
+            {% if error %}<div style="color:var(--red);font-size:12px;margin-bottom:8px;">Invalid password</div>{% endif %}
+            <button class="btn primary" style="width:100%;justify-content:center;" type="submit">Sign in</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

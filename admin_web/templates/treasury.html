@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Treasury · TelePoly Admin{% endblock %}
+{% block page_title %}Treasury{% endblock %}
+
+{% block content %}
+<div class="grid grid-stats" style="margin-bottom:16px;">
+    <div class="card stat">
+        <div class="stat-label">Cumulative platform fee</div>
+        <div class="stat-value">{{ platform_fee_micro|usdt }} <span style="font-size:14px;color:var(--text-secondary)">USDT</span></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">User balances · liability</div>
+        <div class="stat-value">{{ total_balance_micro|usdt }} <span style="font-size:14px;color:var(--text-secondary)">USDT</span></div>
+        <div class="stat-sub">Hot+cold wallet on-chain must cover this</div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Pending review ({{ pending|length }})</div>
+    {% if pending %}
+    <table class="tbl">
+        <thead><tr><th>#</th><th>user</th><th class="num">amount</th><th>address</th><th>created</th><th>actions</th></tr></thead>
+        <tbody>
+        {% for w in pending %}
+        <tr>
+            <td class="mono">#{{ w.id }}</td>
+            <td class="mono">u{{ w.user_id }}</td>
+            <td class="num mono">{{ w.amount_micro|usdt }}</td>
+            <td class="mono" style="font-size:11px;">{{ w.to_address }}</td>
+            <td class="muted">{{ w.created_at|dt }}</td>
+            <td>
+                <form method="post" action="/treasury/{{ w.id }}/approve" style="display:inline;">
+                    <button class="btn small primary" type="submit">Approve</button>
+                </form>
+                <details style="display:inline;">
+                    <summary class="btn small danger" style="cursor:pointer;list-style:none;">Reject…</summary>
+                    <form method="post" action="/treasury/{{ w.id }}/reject" style="margin-top:6px;display:flex;gap:4px;">
+                        <input name="reason" placeholder="reason" required>
+                        <button class="btn small danger" type="submit">Confirm reject</button>
+                    </form>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty">Nothing pending. ✓</div>{% endif %}
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Approved · ready to send ({{ approved|length }})</div>
+    {% if approved %}
+    <table class="tbl">
+        <thead><tr><th>#</th><th>user</th><th class="num">amount</th><th>address</th><th>actions</th></tr></thead>
+        <tbody>
+        {% for w in approved %}
+        <tr>
+            <td class="mono">#{{ w.id }}</td>
+            <td class="mono">u{{ w.user_id }}</td>
+            <td class="num mono">{{ w.amount_micro|usdt }}</td>
+            <td class="mono" style="font-size:11px;">{{ w.to_address }}</td>
+            <td>
+                <form method="post" action="/treasury/{{ w.id }}/execute" style="display:inline;"
+                      onsubmit="return confirm('Send {{ w.amount_micro|usdt }} USDT on-chain to {{ w.to_address }}?\\n\\nThis is irreversible.');">
+                    <button class="btn small primary" type="submit">Send on-chain ⚡</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty muted">No approved withdrawals waiting.</div>{% endif %}
+</div>
+
+<div class="card">
+    <div class="card-title">Recent (sent / rejected / failed)</div>
+    {% if recent %}
+    <table class="tbl">
+        <thead><tr><th>#</th><th>user</th><th class="num">amount</th><th>status</th><th>tx_hash</th><th>note</th></tr></thead>
+        <tbody>
+        {% for w in recent %}
+        <tr>
+            <td class="mono">#{{ w.id }}</td>
+            <td class="mono">u{{ w.user_id }}</td>
+            <td class="num mono">{{ w.amount_micro|usdt }}</td>
+            <td><span class="badge {% if w.status=='sent' %}green{% else %}red{% endif %}">{{ w.status }}</span></td>
+            <td class="mono" style="font-size:11px;">{{ w.tx_hash[:16] + "…" if w.tx_hash else "-" }}</td>
+            <td class="muted" style="font-size:11px;">{{ w.reject_reason or "-" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty muted">No history yet.</div>{% endif %}
+</div>
+{% endblock %}

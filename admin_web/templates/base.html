@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+    <title>{% block title %}TelePoly Admin{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23007aff' d='M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z'/%3E%3C/svg%3E">
+</head>
+<body>
+{# 全局 SVG 图标定义 #}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+        <symbol id="i-grid" viewBox="0 0 16 16">
+            <rect x="2" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="2" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="2" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="9" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        </symbol>
+        <symbol id="i-target" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="8" cy="8" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        </symbol>
+        <symbol id="i-users" viewBox="0 0 16 16">
+            <circle cx="6" cy="5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M2 14c0-2.5 1.8-4.5 4-4.5s4 2 4 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="11.5" cy="5.5" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 14c0-1.8 1.4-3.5 3-3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        </symbol>
+        <symbol id="i-vault" viewBox="0 0 16 16">
+            <rect x="2" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="10" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M5 5.5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="i-logo" viewBox="0 0 24 24">
+            <path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z" fill="currentColor"/>
+        </symbol>
+    </defs>
+</svg>
+
+<div class="app">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark"><svg width="18" height="18"><use href="#i-logo"/></svg></div>
+            <div>
+                <div class="brand-name">TelePoly</div>
+                <div class="brand-sub">Admin</div>
+            </div>
+        </div>
+        <nav class="nav">
+            <a href="/" class="nav-item {% if active=='dashboard' %}active{% endif %}">
+                <svg width="16" height="16"><use href="#i-grid"/></svg>Overview
+            </a>
+            <a href="/events" class="nav-item {% if active=='events' %}active{% endif %}">
+                <svg width="16" height="16"><use href="#i-target"/></svg>Events
+            </a>
+            <a href="/users" class="nav-item {% if active=='users' %}active{% endif %}">
+                <svg width="16" height="16"><use href="#i-users"/></svg>Users
+            </a>
+            <a href="/treasury" class="nav-item {% if active=='treasury' %}active{% endif %}">
+                <svg width="16" height="16"><use href="#i-vault"/></svg>Treasury
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <span>v0.2 · Day 2</span>
+            <a href="/logout">Sign out</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <header class="topbar">
+            <h1>{% block page_title %}{% endblock %}</h1>
+            {% block topbar_extra %}{% endblock %}
+        </header>
+        <main class="content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+</body>
+</html>

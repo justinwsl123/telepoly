@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # ---- Bot ----
     telepoly_bot_token: str = Field(default="", alias="TELEPOLY_BOT_TOKEN")
     telepoly_bot_username: str = Field(default="TelePoly_Bot", alias="TELEPOLY_BOT_USERNAME")
+    bot_id: str = Field(default="main", alias="BOT_ID")  # 矩阵中每个实例自己的标识
+    bot_lang: str = Field(default="", alias="BOT_LANG")  # 强制覆盖 default_lang，矩阵实例用
     owner_tg_ids: str = Field(default="", alias="OWNER_TG_IDS")
     announce_channel_id: str = Field(default="", alias="ANNOUNCE_CHANNEL_ID")
 

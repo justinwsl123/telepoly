@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Overview · TelePoly Admin{% endblock %}
+{% block page_title %}Overview{% endblock %}
+
+{% block content %}
+<div class="grid grid-stats">
+    <div class="card stat">
+        <div class="stat-label">Total users</div>
+        <div class="stat-value">{{ "{:,}".format(n_users) }}</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">Active events</div>
+        <div class="stat-value">{{ n_active }}</div>
+        <div class="stat-sub">currently open for bets</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">Bet volume · 24h</div>
+        <div class="stat-value">{{ bet_24h_micro|usdt }} <span style="font-size:14px;color:var(--text-secondary)">USDT</span></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">Platform fee · cumulative</div>
+        <div class="stat-value">{{ platform_fee_micro|usdt }} <span style="font-size:14px;color:var(--text-secondary)">USDT</span></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">User balances · total</div>
+        <div class="stat-value">{{ total_balance_micro|usdt }} <span style="font-size:14px;color:var(--text-secondary)">USDT</span></div>
+        <div class="stat-sub">should equal hot+cold wallet on-chain ± epsilon</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-label">Pending withdrawals</div>
+        <div class="stat-value">
+            {{ n_pending_withdraw }}
+            {% if n_pending_withdraw %}
+                <a href="/treasury" class="badge orange" style="font-size:11px;vertical-align:middle;">Review →</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<hr class="sep">
+
+<div class="card">
+    <div class="card-title">Recent events</div>
+    {% if recent_events %}
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>#</th><th>Title</th><th>State</th>
+                <th class="num">Pool YES</th><th class="num">Pool NO</th>
+                <th>Closes</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for ev in recent_events %}
+            <tr>
+                <td class="mono">#{{ ev.id }}</td>
+                <td>{{ ev.title }}</td>
+                <td><span class="badge {% if ev.state=='open' %}green{% elif ev.state=='settled' %}blue{% elif ev.state=='void' %}red{% endif %}">{{ ev.state }}</span></td>
+                <td class="num mono">{{ ev.pool_yes_micro|usdt }}</td>
+                <td class="num mono">{{ ev.pool_no_micro|usdt }}</td>
+                <td class="muted">{{ ev.close_at|dt }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty">No events yet. Go to Events tab to create the first one.</div>{% endif %}
+</div>
+{% endblock %}

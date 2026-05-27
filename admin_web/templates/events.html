@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Events · TelePoly Admin{% endblock %}
+{% block page_title %}Events{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-title">Create new event</div>
+    <form method="post" action="/events/new">
+        <div class="form-group">
+            <label>Title</label>
+            <input name="title" placeholder="Will BTC close above $120,000 by tomorrow midnight UTC?" required>
+        </div>
+        <div class="form-group">
+            <label>Description (optional, supports Markdown in bot)</label>
+            <textarea name="description" rows="2" placeholder="Source: CoinMarketCap snapshot at 23:59 UTC"></textarea>
+        </div>
+        <div class="grid grid-stats" style="grid-template-columns:repeat(3,1fr);">
+            <div class="form-group">
+                <label>Closes in (hours)</label>
+                <input name="hours" type="number" step="0.5" min="0.5" value="24" required>
+            </div>
+            <div class="form-group">
+                <label>YES label</label>
+                <input name="yes_label" value="YES">
+            </div>
+            <div class="form-group">
+                <label>NO label</label>
+                <input name="no_label" value="NO">
+            </div>
+        </div>
+        <button class="btn primary" type="submit">Create draft</button>
+        <span class="muted" style="margin-left:8px;font-size:12px;">After creation, click <b>Publish</b> in the row to push to channel.</span>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-title">All events</div>
+    {% if events %}
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>#</th><th>Title</th><th>State</th>
+                <th class="num">YES pool</th><th class="num">NO pool</th>
+                <th>Closes</th><th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for ev in events %}
+            <tr>
+                <td class="mono">#{{ ev.id }}</td>
+                <td>
+                    <div>{{ ev.title }}</div>
+                    {% if ev.outcome %}
+                    <div class="muted" style="font-size:11px;">→ <b>{{ ev.outcome }}</b>{% if ev.evidence_url %} · <a href="{{ ev.evidence_url }}" target="_blank">evidence</a>{% endif %}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge {% if ev.state=='open' %}green{% elif ev.state=='draft' %}{% elif ev.state=='locked' %}orange{% elif ev.state=='settled' %}blue{% elif ev.state=='void' %}red{% endif %}">{{ ev.state }}</span>
+                </td>
+                <td class="num mono">{{ ev.pool_yes_micro|usdt }}</td>
+                <td class="num mono">{{ ev.pool_no_micro|usdt }}</td>
+                <td class="muted">{{ ev.close_at|dt }}</td>
+                <td>
+                    {% if ev.state == "draft" %}
+                        <form method="post" action="/events/{{ev.id}}/publish" style="display:inline;">
+                            <button class="btn small primary" type="submit">Publish</button>
+                        </form>
+                    {% elif ev.state == "open" %}
+                        <form method="post" action="/events/{{ev.id}}/lock" style="display:inline;">
+                            <button class="btn small" type="submit">Lock</button>
+                        </form>
+                    {% elif ev.state == "locked" %}
+                        <details style="display:inline;">
+                            <summary class="btn small primary" style="cursor:pointer;list-style:none;">Settle…</summary>
+                            <form method="post" action="/events/{{ev.id}}/settle" style="margin-top:8px;display:flex;gap:6px;">
+                                <select name="outcome" required>
+                                    <option value="yes">YES wins</option>
+                                    <option value="no">NO wins</option>
+                                    <option value="void">Void / refund</option>
+                                </select>
+                                <input name="evidence_url" placeholder="https://evidence-url" style="min-width:240px;">
+                                <button class="btn small primary" type="submit">Confirm</button>
+                            </form>
+                        </details>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty">No events yet.</div>{% endif %}
+</div>
+{% endblock %}

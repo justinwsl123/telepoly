@@ -136,6 +136,15 @@ def settle_event(
     event.evidence_url = evidence_url
     event.settled_at = datetime.utcnow()
 
+    # 联动 TeleGrowth：手续费按下注用户的 referrer 比例分到 L1/L2 推广员。
+    # 失败不影响主结算（已 commit 不回滚）。
+    if outcome != "void" and summary.get("fee_micro", 0) > 0:
+        try:
+            _record_affiliate_commissions(session, event, bets, summary["fee_micro"])
+        except Exception as e:
+            from loguru import logger
+            logger.warning(f"affiliate commission hook failed for event {event.id}: {e}")
+
     # 快照
     snap = session.get(EventSnapshot, event.id) or EventSnapshot(event_id=event.id)
     snap.total_bets = len(bets)
@@ -147,3 +156,33 @@ def settle_event(
     session.merge(snap)
 
     return summary
+
+
+def _record_affiliate_commissions(session: Session, event: Event, bets: list[Bet], fee_micro: int) -> None:
+    """
+    手续费按"每个下注用户在总池中的占比"分配 referrer 佣金。
+    比如 user A 押了总池 10%，他贡献了 fee 的 10%，他的 referrer 拿其中 40% (L1)。
+    """
+    from integrations.telegrowth import record_commission_for_fee
+    from core.money import micro_to_usdt
+
+    total_pool = sum(b.amount_micro for b in bets)
+    if total_pool <= 0:
+        return
+    by_user: dict[int, int] = {}
+    for b in bets:
+        by_user[b.user_id] = by_user.get(b.user_id, 0) + b.amount_micro
+
+    for user_id, user_total in by_user.items():
+        user = session.get(User, user_id)
+        if not user or not user.referrer_code:
+            continue
+        user_fee_micro = fee_micro * user_total // total_pool
+        if user_fee_micro <= 0:
+            continue
+        record_commission_for_fee(
+            payer_tg_user_id=user.tg_user_id,
+            payer_referrer_code=user.referrer_code,
+            fee_usdt=float(micro_to_usdt(user_fee_micro)),
+            source_payment_ref=f"telepoly:event:{event.id}:user:{user_id}",
+        )

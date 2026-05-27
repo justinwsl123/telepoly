@@ -29,6 +29,14 @@ def get_or_create_user(
             user.username = username
         return user, False
 
+    # 默认从 settings.bot_id 取（矩阵中每个实例不一样），允许显式参数覆盖
+    if bot_id == "main":
+        try:
+            from telepoly_bot.config import settings
+            bot_id = settings.bot_id or "main"
+        except Exception:
+            pass
+
     user = User(
         tg_user_id=tg_user_id,
         bot_id=bot_id,
