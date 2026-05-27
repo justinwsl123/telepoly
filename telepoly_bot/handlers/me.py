@@ -38,22 +38,22 @@ async def _send_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         history = [(b, e) for b, e in rows if b.status != "placed"]
         bal = user.balance_micro
 
-    lines = [f"💰 *余额 / Balance*: `{micro_to_usdt(bal):.2f}` USDT"]
+    lines = [f"💰 *Balance*: `{micro_to_usdt(bal):.2f}` USDT"]
     if active:
-        lines.append("\n🎯 *进行中 / Open positions*:")
+        lines.append("\n🎯 *Open positions*:")
         for b, e in active:
             lines.append(
-                f"  • {e.title[:40]}…  {b.side.upper()} `{micro_to_usdt(b.amount_micro):.2f}`U"
+                f"  • {e.title[:40]}…  {b.side.upper()} `{micro_to_usdt(b.amount_micro):.2f}` USDT"
             )
     if history:
-        lines.append("\n📜 *历史 / History*:")
+        lines.append("\n📜 *History*:")
         for b, e in history[:5]:
             tag = {"won": "🏆", "lost": "🪦", "refunded": "↩️"}.get(b.status, "·")
-            extra = (f"  +{micro_to_usdt(b.payout_micro):.2f}U"
+            extra = (f"  +{micro_to_usdt(b.payout_micro):.2f} USDT"
                      if b.status == "won" else "")
-            lines.append(f"  {tag} {e.title[:32]}… {b.side.upper()} `{micro_to_usdt(b.amount_micro):.2f}`U{extra}")
+            lines.append(f"  {tag} {e.title[:32]}… {b.side.upper()} `{micro_to_usdt(b.amount_micro):.2f}` USDT{extra}")
     if not active and not history:
-        lines.append("\n_还没下过注。/today 看看今天的题目。_")
+        lines.append("\n_No bets yet. Tap /today to see today's market._")
 
     text = "\n".join(lines)
     if update.callback_query:

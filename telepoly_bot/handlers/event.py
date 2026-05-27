@@ -1,4 +1,4 @@
-"""今日事件展示 + 下注流程。"""
+"""Today's market + open-markets list + bet flow (English-only UI)."""
 from __future__ import annotations
 
 from telegram import Update
@@ -6,64 +6,96 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 
 from db.models import Event
 from db.session import get_session
-from core.events import get_active_event
+from core.events import get_active_event, list_events_by_state
 from core.betting import BetError, implied_odds, place_bet, predict_payout
-from core.money import fmt_usdt, micro_to_usdt, usdt_to_micro
+from core.money import micro_to_usdt, usdt_to_micro
 from core.users import get_or_create_user
-from telepoly_bot.keyboards import amount_keyboard, confirm_keyboard, event_keyboard
+from telepoly_bot.config import settings
+from telepoly_bot.keyboards import (
+    amount_keyboard,
+    confirm_keyboard,
+    event_keyboard,
+    events_list_keyboard,
+    menu_keyboard,
+)
 from telepoly_bot.texts import t
 from telepoly_bot.views import render_event_card
 
-# 自定义金额输入态：user_id → (event_id, side)
+# Per-user state for "custom amount" input: user_id → (event_id, side)
 PENDING_AMOUNT: dict[int, tuple[int, str]] = {}
 
 
-def _user_lang(s, tg_id: int) -> str:
-    user, _ = get_or_create_user(s, tg_user_id=tg_id)
-    return user.lang if user.lang in ("en", "zh") else "en"
-
+# ----------------------------------------------------------------------
+# Today's market
+# ----------------------------------------------------------------------
 
 async def cmd_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await _send_today(update, ctx)
+    await send_today(ctx, update.effective_chat.id, update.effective_user.id)
 
 
-async def _send_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    msg = update.effective_message
-    user_id = update.effective_user.id
+async def cb_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    try:
+        await update.callback_query.message.delete()
+    except Exception:
+        pass
+    await send_today(ctx, update.effective_chat.id, update.effective_user.id)
 
+
+async def cb_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open a specific event card (from the open-markets list)."""
+    q = update.callback_query
+    await q.answer()
+    event_id = int(q.data.split(":", 1)[1])
+    try:
+        await q.message.delete()
+    except Exception:
+        pass
+    await _send_event_card(ctx, update.effective_chat.id, event_id)
+
+
+async def send_today(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+    """Show the current daily market — or a fallback menu when none is open."""
     with get_session() as s:
-        lang = _user_lang(s, user_id)
-        ev = get_active_event(s)
+        ev = get_active_event(s, bot_id=settings.bot_id)
+        ev_id = ev.id if ev else None
+
+    if ev_id is None:
+        await ctx.bot.send_message(
+            chat_id=chat_id,
+            text=t("no_active_event"),
+            parse_mode="Markdown",
+            reply_markup=menu_keyboard(),
+        )
+        return
+
+    await _send_event_card(ctx, chat_id, ev_id)
+
+
+async def _send_event_card(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, event_id: int) -> None:
+    """Render and send the photo+caption event card with YES/NO buttons."""
+    with get_session() as s:
+        ev = s.get(Event, event_id)
         if not ev:
-            await msg.reply_markdown(t("no_active_event", lang))
+            await ctx.bot.send_message(chat_id=chat_id, text=t("no_active_event"),
+                                       parse_mode="Markdown", reply_markup=menu_keyboard())
             return
         yes_odds, no_odds = implied_odds(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps)
-        text = render_event_card(ev, lang)
+        text = render_event_card(ev)
         kb = event_keyboard(ev.id, ev.yes_label, ev.no_label, yes_odds, no_odds)
-        ev_id = ev.id
 
-    chart = await _render_event_chart(ev_id)
+    chart = await _render_event_chart(event_id)
 
-    if update.callback_query:
-        await update.callback_query.answer()
-        # 从按钮触发的更新：删旧 → 发新（带图）
-        try:
-            await update.callback_query.message.delete()
-        except Exception:
-            pass
-        await ctx.bot.send_photo(chat_id=update.effective_chat.id,
-                                 photo=chart, caption=text,
+    if chart:
+        await ctx.bot.send_photo(chat_id=chat_id, photo=chart, caption=text,
                                  parse_mode="Markdown", reply_markup=kb)
     else:
-        if chart:
-            await msg.reply_photo(photo=chart, caption=text,
-                                  parse_mode="Markdown", reply_markup=kb)
-        else:
-            await msg.reply_markdown(text, reply_markup=kb)
+        await ctx.bot.send_message(chat_id=chat_id, text=text,
+                                   parse_mode="Markdown", reply_markup=kb)
 
 
 async def _render_event_chart(event_id: int) -> bytes | None:
-    """渲染走势图。失败时返回 None，调用方降级到纯文本。"""
+    """Render the pool-trend chart. Return None on any failure → caller degrades to text."""
     try:
         from core.snapshots import fetch_timeline
         from telepoly_bot.charts import render_pool_timeline
@@ -76,18 +108,54 @@ async def _render_event_chart(event_id: int) -> bytes | None:
         return None
 
 
-async def cb_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await _send_today(update, ctx)
+# ----------------------------------------------------------------------
+# All open markets
+# ----------------------------------------------------------------------
+
+async def cmd_events(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _send_events_list(ctx, update.effective_chat.id)
 
 
-async def cb_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await _send_today(update, ctx)
+async def cb_events(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    try:
+        await update.callback_query.message.delete()
+    except Exception:
+        pass
+    await _send_events_list(ctx, update.effective_chat.id)
 
 
-# ---------------- 下注流程 ----------------
+async def _send_events_list(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    with get_session() as s:
+        events = list_events_by_state(s, ["open"], bot_id=settings.bot_id)
+        items = [(ev.id, ev.title) for ev in events]
+
+    if not items:
+        await ctx.bot.send_message(chat_id=chat_id, text=t("no_open_events"),
+                                   parse_mode="Markdown", reply_markup=menu_keyboard())
+        return
+
+    # Re-fetch lightweight rows for keyboard rendering (id + title is enough).
+    class _Row:
+        def __init__(self, eid: int, title: str):
+            self.id = eid
+            self.title = title
+
+    rows = [_Row(eid, title) for eid, title in items]
+    await ctx.bot.send_message(
+        chat_id=chat_id,
+        text=t("events_list_header"),
+        parse_mode="Markdown",
+        reply_markup=events_list_keyboard(rows),
+    )
+
+
+# ----------------------------------------------------------------------
+# Bet flow
+# ----------------------------------------------------------------------
 
 async def cb_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """点 [YES] / [NO] → 选金额"""
+    """[YES] / [NO] tapped → show amount picker."""
     q = update.callback_query
     await q.answer()
     _, event_id_str, side = q.data.split(":")
@@ -96,20 +164,27 @@ async def cb_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     with get_session() as s:
         ev = s.get(Event, event_id)
         if not ev or ev.state != "open":
-            await q.edit_message_text("❌ 事件已封盘 / Event closed.")
+            await q.edit_message_text("❌ This market is closed.")
             return
-        lang = _user_lang(s, q.from_user.id)
         label = ev.yes_label if side == "yes" else ev.no_label
 
-    text = (f"💸 选择金额 / Choose amount\n方向 *{side.upper()}* ({label})"
-            if lang == "zh"
-            else f"💸 Choose amount\nSide *{side.upper()}* ({label})")
-    await q.edit_message_text(text, parse_mode="Markdown",
-                              reply_markup=amount_keyboard(event_id, side))
+    text = f"💸 *Choose your bet amount*\nSide: *{side.upper()}* ({label})"
+    # Caption-edit fails on photo messages → fall back to sending a fresh message.
+    try:
+        await q.edit_message_caption(caption=text, parse_mode="Markdown",
+                                     reply_markup=amount_keyboard(event_id, side))
+    except Exception:
+        try:
+            await q.edit_message_text(text, parse_mode="Markdown",
+                                      reply_markup=amount_keyboard(event_id, side))
+        except Exception:
+            await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                                       parse_mode="Markdown",
+                                       reply_markup=amount_keyboard(event_id, side))
 
 
 async def cb_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """选金额 → 弹确认"""
+    """Amount picked → show confirmation."""
     q = update.callback_query
     await q.answer()
     _, event_id_str, side, amount_str = q.data.split(":")
@@ -117,40 +192,57 @@ async def cb_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     if amount_str == "custom":
         PENDING_AMOUNT[q.from_user.id] = (event_id, side)
-        await q.edit_message_text(
-            "✏️ 直接发送金额（USDT），例如 `25` 或 `12.5`\n"
-            "输入完成后会显示确认。"
-        )
+        msg = "✏️ Send the amount in USDT, e.g. `25` or `12.5`."
+        try:
+            await q.edit_message_text(msg, parse_mode="Markdown")
+        except Exception:
+            await ctx.bot.send_message(chat_id=update.effective_chat.id, text=msg,
+                                       parse_mode="Markdown")
         return
 
     amount_usdt = float(amount_str)
-    await _show_confirm(q, event_id, side, amount_usdt)
+    await _show_confirm(update, ctx, event_id, side, amount_usdt)
 
 
-async def _show_confirm(q, event_id: int, side: str, amount_usdt: float) -> None:
+async def _show_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE,
+                        event_id: int, side: str, amount_usdt: float) -> None:
     amt_micro = usdt_to_micro(amount_usdt)
     with get_session() as s:
         ev = s.get(Event, event_id)
         if not ev or ev.state != "open":
-            await q.edit_message_text("❌ 事件已封盘。")
+            text = "❌ This market is closed."
+            if update.callback_query:
+                await update.callback_query.edit_message_text(text)
+            else:
+                await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text)
             return
         payout = predict_payout(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps, side, amt_micro)
         label = ev.yes_label if side == "yes" else ev.no_label
+        title = ev.title
 
     text = (
-        f"⚠️ 请确认下注\n\n"
-        f"事件: _{ev.title}_\n"
-        f"方向: *{side.upper()}* ({label})\n"
-        f"金额: *{amount_usdt} USDT*\n"
-        f"若中奖预估回报: ≈ *{micro_to_usdt(payout):.2f} USDT*\n"
-        f"（含本金；最终以结算时池子比例为准）"
+        f"⚠️ *Confirm your bet*\n\n"
+        f"Market: _{title}_\n"
+        f"Side: *{side.upper()}* ({label})\n"
+        f"Amount: *{amount_usdt} USDT*\n"
+        f"Estimated payout if you win: ≈ *{micro_to_usdt(payout):.2f} USDT*\n"
+        f"_(includes your stake; final odds settle on event close)_"
     )
-    await q.edit_message_text(text, parse_mode="Markdown",
-                              reply_markup=confirm_keyboard(event_id, side, amount_usdt))
+    kb = confirm_keyboard(event_id, side, amount_usdt)
+
+    q = update.callback_query
+    if q is not None:
+        try:
+            await q.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+            return
+        except Exception:
+            pass
+    await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                               parse_mode="Markdown", reply_markup=kb)
 
 
 async def cb_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """确认下注 → 落库"""
+    """Confirm tapped → write the bet to the DB."""
     q = update.callback_query
     _, event_id_str, side, amount_str = q.data.split(":")
     event_id = int(event_id_str)
@@ -160,7 +252,6 @@ async def cb_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     with get_session() as s:
         ev = s.get(Event, event_id)
         user, _ = get_or_create_user(s, tg_user_id=q.from_user.id, username=q.from_user.username)
-        lang = user.lang if user.lang in ("en", "zh") else "en"
         try:
             bet = place_bet(s, user=user, event=ev, side=side, amount_micro=amt_micro)
         except BetError as e:
@@ -169,17 +260,14 @@ async def cb_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         yes_odds, no_odds = implied_odds(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps)
         odds = yes_odds if side == "yes" else no_odds
-        payout = predict_payout(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps, side,
-                                amt_micro * 0)  # 本人这一笔已计入池子，预估"再追加 0"=零，所以重算用 bet 数据
-        # 改回用 bet 自身预估
-        from core.settlement import SettlementError  # noqa: F401  (不用，但保留以备后用)
-        # 给用户看的"假设现在结算" payout：按当前池子比例
+
+        # "What if we settled right now?" — pure UX preview, not a promise.
         winning_pool = ev.pool_yes_micro if side == "yes" else ev.pool_no_micro
         total = ev.pool_yes_micro + ev.pool_no_micro
         payout_pool = total * (10_000 - ev.fee_bps) // 10_000
         est_payout = payout_pool * bet.amount_micro // winning_pool if winning_pool else 0
 
-        msg = t("bet_placed", lang,
+        msg = t("bet_placed",
                 side=side.upper(),
                 amt=f"{amount_usdt:.2f}",
                 payout=f"{micro_to_usdt(est_payout):.2f}",
@@ -187,15 +275,18 @@ async def cb_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 bal=f"{micro_to_usdt(user.balance_micro):.2f}")
 
     await q.answer("✅", show_alert=False)
-    await q.edit_message_text(msg, parse_mode="Markdown")
+    try:
+        await q.edit_message_text(msg, parse_mode="Markdown")
+    except Exception:
+        await ctx.bot.send_message(chat_id=update.effective_chat.id, text=msg, parse_mode="Markdown")
 
 
 async def on_text_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """处理用户在 custom 金额输入态发的文本。"""
+    """Catch the user's free-text amount while they're in custom-amount mode."""
     user_id = update.effective_user.id
     pending = PENDING_AMOUNT.pop(user_id, None)
     if not pending:
-        return  # 不在输入态就忽略
+        return
     event_id, side = pending
 
     text = (update.message.text or "").strip().replace(",", ".")
@@ -204,28 +295,26 @@ async def on_text_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         if amount_usdt <= 0:
             raise ValueError
     except Exception:
-        await update.message.reply_text("⚠️ 请发送有效数字，例如 25 或 12.5")
+        await update.message.reply_text("⚠️ Please send a valid number, e.g. 25 or 12.5")
         PENDING_AMOUNT[user_id] = pending
         return
 
-    # 把"消息"伪装成 callback 风格调用 _show_confirm
-    fake_q = update.message
-    # 直接调 confirm_keyboard 渲染
     amt_micro = usdt_to_micro(amount_usdt)
     with get_session() as s:
         ev = s.get(Event, event_id)
         if not ev or ev.state != "open":
-            await update.message.reply_text("❌ 事件已封盘。")
+            await update.message.reply_text("❌ This market is closed.")
             return
         payout = predict_payout(ev.pool_yes_micro, ev.pool_no_micro, ev.fee_bps, side, amt_micro)
         label = ev.yes_label if side == "yes" else ev.no_label
+        title = ev.title
 
     await update.message.reply_markdown(
-        f"⚠️ 请确认下注\n\n"
-        f"事件: _{ev.title}_\n"
-        f"方向: *{side.upper()}* ({label})\n"
-        f"金额: *{amount_usdt} USDT*\n"
-        f"若中奖预估回报: ≈ *{micro_to_usdt(payout):.2f} USDT*",
+        f"⚠️ *Confirm your bet*\n\n"
+        f"Market: _{title}_\n"
+        f"Side: *{side.upper()}* ({label})\n"
+        f"Amount: *{amount_usdt} USDT*\n"
+        f"Estimated payout if you win: ≈ *{micro_to_usdt(payout):.2f} USDT*",
         reply_markup=confirm_keyboard(event_id, side, amount_usdt),
     )
 
@@ -233,10 +322,12 @@ async def on_text_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 def register(app) -> None:
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("event", cmd_today))
+    app.add_handler(CommandHandler("events", cmd_events))
     app.add_handler(CallbackQueryHandler(cb_today, pattern=r"^today$"))
+    app.add_handler(CallbackQueryHandler(cb_events, pattern=r"^events$"))
     app.add_handler(CallbackQueryHandler(cb_detail, pattern=r"^detail:\d+$"))
     app.add_handler(CallbackQueryHandler(cb_bet, pattern=r"^bet:\d+:(yes|no)$"))
     app.add_handler(CallbackQueryHandler(cb_amount, pattern=r"^amt:\d+:(yes|no):.+$"))
     app.add_handler(CallbackQueryHandler(cb_confirm, pattern=r"^confirm:\d+:(yes|no):.+$"))
-    # 仅在用户处于 custom 金额输入态时才生效（内部判断）
+    # Only matches when the user is in custom-amount mode (handler returns early otherwise).
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text_amount), group=1)

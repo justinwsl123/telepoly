@@ -37,7 +37,7 @@ def _get_address_for(user) -> tuple[str, bool]:
             except Exception:
                 pass
 
-    return settings.wallet_hot_address or "(待配置 / pending setup)", False
+    return settings.wallet_hot_address or "(pending setup)", False
 
 
 async def cmd_deposit(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,12 +53,11 @@ async def _send_deposit(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     u = update.effective_user
     with get_session() as s:
         user, _ = get_or_create_user(s, tg_user_id=u.id, username=u.username)
-        lang = user.lang if user.lang in ("en", "zh") else "en"
 
     address, user_specific = _get_address_for(user)
-    msg = t("deposit_info", lang, address=address)
+    msg = t("deposit_info", address=address)
     if not user_specific:
-        msg += "\n\n" + t("deposit_pending", lang)
+        msg += "\n\n" + t("deposit_pending")
 
     if update.callback_query:
         await update.callback_query.edit_message_text(msg, parse_mode="Markdown")
@@ -73,11 +72,11 @@ async def cmd_withdraw(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     parts = (update.message.text or "").split()
     if len(parts) != 3:
         await update.message.reply_markdown(
-            "📤 *提现 / Withdraw*\n\n"
-            "用法 / Usage: `/withdraw <amount> <T-address>`\n"
-            "示例 / Example: `/withdraw 25 TXa...abc`\n\n"
-            "⚠️ TRC20 only. 网络费 1 USDT。\n"
-            "≤ 200 USDT 自动出款，> 200 USDT 走人工审核。"
+            "📤 *Withdraw*\n\n"
+            "Usage: `/withdraw <amount> <T-address>`\n"
+            "Example: `/withdraw 25 TXa...abc`\n\n"
+            "⚠️ TRC20 only. Network fee 1 USDT.\n"
+            "Auto-paid up to 200 USDT, larger amounts go to manual review."
         )
         return
 
@@ -86,7 +85,7 @@ async def cmd_withdraw(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if amount_usdt <= 0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text("金额无效"); return
+        await update.message.reply_text("Invalid amount."); return
     to_addr = parts[2].strip()
 
     from core.money import usdt_to_micro
@@ -106,16 +105,17 @@ async def cmd_withdraw(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         status = w.status
 
     if status == "approved":
-        msg = (f"✅ *提现已受理 #{wid}*\n"
-               f"金额: `{amount_usdt}` USDT\n"
-               f"地址: `{to_addr}`\n"
-               f"网络费: 1 USDT\n"
-               f"状态: 自动批准（≤ ${settings.wallet_auto_approve_limit_usdt}），等待出款进程发起链上交易。\n"
-               f"剩余余额: `{micro_to_usdt(bal):.2f}` USDT")
+        msg = (f"✅ *Withdrawal accepted #{wid}*\n"
+               f"Amount: `{amount_usdt}` USDT\n"
+               f"To: `{to_addr}`\n"
+               f"Network fee: 1 USDT\n"
+               f"Status: auto-approved (≤ ${settings.wallet_auto_approve_limit_usdt}). "
+               f"Payout job will broadcast the on-chain transaction shortly.\n"
+               f"Balance left: `{micro_to_usdt(bal):.2f}` USDT")
     else:
-        msg = (f"⏳ *提现已入队 #{wid}*\n"
-               f"金额: `{amount_usdt}` USDT 超过自动批准上限，进入人工审核。\n"
-               f"剩余余额: `{micro_to_usdt(bal):.2f}` USDT")
+        msg = (f"⏳ *Withdrawal queued #{wid}*\n"
+               f"Amount: `{amount_usdt}` USDT exceeds the auto-approval limit — manual review.\n"
+               f"Balance left: `{micro_to_usdt(bal):.2f}` USDT")
 
     await update.message.reply_markdown(msg)
 

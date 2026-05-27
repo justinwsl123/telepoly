@@ -34,12 +34,13 @@ async def _send_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     link = f"https://t.me/{settings.telepoly_bot_username}?start=ref_{code}"
     text = (
-        "👥 *邀请赚钱 / Invite & Earn*\n\n"
-        "把下面的链接发给朋友：\n"
+        "👥 *Invite & Earn*\n\n"
+        "Share this link with your friends:\n"
         f"`{link}`\n\n"
-        "✅ 朋友的每笔下注的手续费 *40%* 归你（一级）\n"
-        "✅ 他再拉来的朋友 *8%* 归你（二级）\n"
-        "_（结算后实时入账，>=$10 可申请提现，跨 Bot 共享 affiliate）_"
+        "✅ You earn *40%* of the platform fee on every bet they place (Tier 1)\n"
+        "✅ Plus *8%* on the friends they bring in (Tier 2)\n"
+        "_Commissions credit instantly after each event settles. "
+        "Minimum withdrawal: $10._"
     )
     target = update.callback_query.message if update.callback_query else update.message
     if update.callback_query:
