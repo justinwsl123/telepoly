@@ -188,10 +188,10 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     delta = _delta_line(timeline)
     if delta:
         card_lines.append(f"🚀 {delta}")
-    # Telegram does not expose a "background only" primitive: the tinted
-    # block, slim left bar and padding are all bundled into <blockquote>.
-    # Keep it because the tinted block reads better than plain text.
-    info_card = "<blockquote>" + "\n".join(card_lines) + "</blockquote>"
+    # Telegram captions do not support font-size control. To make the card
+    # read larger without <blockquote>, render every line bold and keep the
+    # lines short so the native caption font feels more prominent.
+    info_card = "\n".join(f"<b>{line}</b>" for line in card_lines)
 
     # --- body ---
     body_lines: list[str] = [
