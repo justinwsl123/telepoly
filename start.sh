@@ -30,9 +30,10 @@ echo "=========================================================="
 # 1) 幂等建表
 $PY -m db.init
 
-# 1.5) 一次性 demo 事件 seed（SEED_DEMO_EVENT=1 时跑，自身幂等）
-if [ "$SEED_DEMO_EVENT" = "1" ]; then
-  echo "[seed] SEED_DEMO_EVENT=1 → seeding demo World Cup market…"
+# 1.5) Demo event seed — runs every boot (idempotent: refreshes in place).
+# Set SEED_DEMO_EVENT=0 to opt out (e.g. once real markets are flowing).
+if [ "$SEED_DEMO_EVENT" != "0" ]; then
+  echo "[seed] refreshing demo World Cup market…"
   $PY -m scripts.seed_demo || echo "[seed] WARNING: seed_demo failed (continuing)"
 fi
 
