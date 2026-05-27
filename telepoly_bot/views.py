@@ -188,10 +188,14 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     delta = _delta_line(timeline)
     if delta:
         card_lines.append(f"🚀 {delta}")
-    info_card = "<blockquote>" + "\n".join(card_lines) + "</blockquote>"
+    # No <blockquote> wrapper → no slim left bar, no inner padding, full
+    # message-bubble width. Trade-off: also no background tint (Telegram's
+    # bg / bar / padding are bundled in one styling primitive).
+    info_card = "\n".join(card_lines)
 
     # --- body ---
     body_lines: list[str] = [
+        "",  # blank line at the TOP of body
         f"🎯 <b>{e_title}</b>",
     ]
     if e_desc:
@@ -199,12 +203,13 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
     body_lines.append("")  # blank line before odds
     body_lines.append(f"🟢 {e_yes_l} → <b>{yes_odds:.2f}x</b>  ({yes_pool} U)")
     body_lines.append(f"🔴 {e_no_l} → <b>{no_odds:.2f}x</b>  ({no_pool} U)")
-    body_lines.append("")
+    body_lines.append("")  # blank line before footer
     body_lines.append(f"⏰ Closes: {close_str}")
     body_lines.append("<i>Parimutuel · winners split the losers' pool</i>")
+    body_lines.append("")  # blank line at the BOTTOM of body
 
     # Leading blank line so the card doesn't stick to the photo above.
-    return "\n" + info_card + "\n\n" + "\n".join(body_lines)
+    return "\n" + info_card + "\n" + "\n".join(body_lines)
 
 
 def load_cover_bytes(event: Event) -> bytes | None:
