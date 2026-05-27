@@ -181,7 +181,8 @@ def render_event_card(event: Event, *_unused, timeline: Sequence[dict] | None = 
         _DIVIDER,
         f"📊 <b>{yes_pct}% YES</b>   {_bar(yes_share)}",
     ]
-    trend = _trend_line(timeline)
+    # 4 points keeps the strip on a single line on phones (5 wrapped).
+    trend = _trend_line(timeline, max_points=4)
     if trend:
         card_lines.append(f"📈 {trend}")
     delta = _delta_line(timeline)
