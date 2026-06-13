@@ -78,6 +78,16 @@ def main() -> None:
     _setup_logging()
     logger.info("== TelePoly Bot starting ==")
     init_db()  # 幂等创建表
+
+    # 幂等创建并开启世界杯 AI 模型冠军竞猜（已存在则跳过），非致命
+    if settings.wc_contest_autocreate:
+        try:
+            from scripts.create_wc_contest import DEFAULT_CLOSE_AT, create_contest
+            eid = create_contest(close_at=DEFAULT_CLOSE_AT, auto_open=True)
+            logger.info(f"🏆 WC contest ready: event#{eid}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"WC contest autocreate skipped: {e}")
+
     app = build_app()
 
     logger.info(f"Bot username (configured): @{settings.telepoly_bot_username}")

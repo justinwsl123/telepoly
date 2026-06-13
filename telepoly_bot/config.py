@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     valuebet_public_api_url: str = Field(
         default="https://app.betscope.cc", alias="VALUEBET_PUBLIC_API_URL"
     )
+    # 启动时幂等创建并开启世界杯竞猜事件（已存在则跳过）
+    wc_contest_autocreate: bool = Field(default=True, alias="WC_CONTEST_AUTOCREATE")
 
     @cached_property
     def owner_ids(self) -> set[int]:
