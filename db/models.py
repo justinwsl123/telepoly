@@ -5,6 +5,8 @@ SQLAlchemy ORM 模型 · TelePoly 全部数据表。
 1. 所有金额一律用 BIGINT micro 存（USDT × 10^6），禁止 float。
 2. 资金流动必须经 Ledger（双式记账），便于审计 + 对账。
 3. Event 状态机：draft → open → locked → settled / void。
+4. Event.kind: "binary"（YES/NO）或 "multi"（多选项 Parimutuel）。
+   multi 事件的各选项池子存在 EventOption 表，Bet.side 存 opt_key。
 """
 from __future__ import annotations
 
@@ -63,10 +65,13 @@ class Event(Base):
     open_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     close_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
+    # "binary" (YES/NO) | "multi" (多选项)
+    kind: Mapped[str] = mapped_column(String(16), default="binary", index=True)
+
     state: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     # draft / open / locked / settled / void
 
-    outcome: Mapped[str | None] = mapped_column(String(8), nullable=True)  # yes / no / void
+    outcome: Mapped[str | None] = mapped_column(String(8), nullable=True)  # yes / no / void / opt_key
     evidence_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     fee_bps: Mapped[int] = mapped_column(Integer, default=500)
@@ -207,3 +212,27 @@ class EventSnapshot(Base):
     fee_micro: Mapped[int] = mapped_column(BigInteger, default=0)
 
     snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+# ----------------------------- 多选项事件选项 -----------------------------
+class EventOption(Base):
+    """
+    multi 类型事件的每一个可投票选项。
+
+    Bet.side 存 opt_key（如 "gpt" / "claude" 等），直接重用现有 Bet 表。
+    opt_key ≤ 8 chars，符合 Bet.side String(8) 约束。
+    """
+    __tablename__ = "event_options"
+    __table_args__ = (
+        UniqueConstraint("event_id", "opt_key", name="uq_event_option_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(Integer, ForeignKey("events.id"), index=True, nullable=False)
+
+    opt_key: Mapped[str] = mapped_column(String(16), nullable=False)    # 短标识，如 "gpt"
+    label: Mapped[str] = mapped_column(String(64), nullable=False)      # 展示名
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True) # 可选 hex 颜色
+    pool_micro: Mapped[int] = mapped_column(BigInteger, default=0)       # 该选项累计投注
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)          # 展示排序
+    is_winner: Mapped[bool] = mapped_column(Boolean, default=False)      # 结算后标记

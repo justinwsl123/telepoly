@@ -75,10 +75,23 @@ async def send_today(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int)
 async def _send_event_card(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, event_id: int) -> None:
     """Render and send the cover photo + ASCII info-card caption + bet buttons.
 
-    The cover image is static (Telegram cannot edit photos in place); the
-    caption is built from a Markdown code block + live odds and CAN be
-    refreshed later via `edit_message_caption` whenever the pool moves.
+    Routes to multi_event handler for kind="multi" events; binary events
+    continue through the original binary rendering path unchanged.
     """
+    with get_session() as s:
+        ev = s.get(Event, event_id)
+        if not ev:
+            await ctx.bot.send_message(chat_id=chat_id, text=t("no_active_event"),
+                                       parse_mode="Markdown", reply_markup=menu_keyboard())
+            return
+        ev_kind = ev.kind
+
+    if ev_kind == "multi":
+        from telepoly_bot.handlers.multi_event import send_multi_event_card
+        await send_multi_event_card(ctx, chat_id, event_id)
+        return
+
+    # ---- binary path (unchanged) ----
     with get_session() as s:
         ev = s.get(Event, event_id)
         if not ev:

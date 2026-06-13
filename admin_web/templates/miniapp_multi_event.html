@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{{ title }} · TelePoly</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+    --bg: var(--tg-theme-bg-color, #f5f5f7);
+    --surface: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #1d1d1f);
+    --hint: var(--tg-theme-hint-color, #6e6e73);
+    --tint: var(--tg-theme-button-color, #007aff);
+    --button-text: var(--tg-theme-button-text-color, #ffffff);
+    --border: rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; }
+html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    font-size: 15px;
+}
+.container { padding: 16px; max-width: 600px; margin: 0 auto; }
+.title { font-size: 18px; font-weight: 700; line-height: 1.3; margin-bottom: 4px; letter-spacing: -0.01em; }
+.desc { color: var(--hint); font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+.card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+}
+.pool-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.pool-total { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.pool-label { font-size: 11px; color: var(--hint); text-transform: uppercase; letter-spacing: 0.05em; }
+.pool-meta { font-size: 12px; color: var(--hint); }
+
+/* Option rows */
+.option-list { display: flex; flex-direction: column; gap: 8px; }
+.option-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.option-row.selected {
+    border-color: var(--tint);
+    background: rgba(0,122,255,0.07);
+}
+.option-row.winner { border-color: #34c759; background: rgba(52,199,89,0.08); }
+.option-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+.option-label { flex: 1; font-size: 14px; font-weight: 500; }
+.option-odds { font-size: 16px; font-weight: 700; min-width: 48px; text-align: right; }
+.option-pool { font-size: 11px; color: var(--hint); min-width: 56px; text-align: right; }
+.option-oracle { font-size: 11px; color: var(--hint); min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.option-bar-wrap { width: 100%; margin-top: 4px; }
+.option-bar-bg { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.option-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+
+/* Bet section */
+.bet-section { margin-top: 12px; }
+.selected-label { font-size: 13px; color: var(--hint); margin-bottom: 8px; }
+.selected-label strong { color: var(--text); font-size: 14px; }
+.amounts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 10px 0; }
+.btn-amt {
+    background: var(--bg); color: var(--text);
+    padding: 9px 4px; border-radius: 9px;
+    border: 1px solid var(--border);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    font-family: inherit; text-align: center;
+    transition: background 0.12s, border-color 0.12s;
+}
+.btn-amt.active { background: var(--tint); color: var(--button-text); border-color: transparent; }
+.amount-input {
+    width: 100%; padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    text-align: center;
+    margin-bottom: 8px;
+}
+.estimate {
+    background: rgba(0,122,255,0.08);
+    border-radius: 10px;
+    padding: 11px 13px;
+    margin: 8px 0;
+    font-size: 13px;
+}
+.estimate strong { color: var(--tint); font-size: 15px; }
+.balance { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; }
+.balance .label { color: var(--hint); }
+.balance .value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.alert { color: #ff3b30; font-size: 13px; padding: 6px 0; min-height: 18px; }
+.success-card {
+    background: rgba(52,199,89,0.12);
+    color: #34c759;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: none;
+}
+.wallet-card {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--hint);
+    line-height: 1.6;
+}
+.wallet-card a { color: var(--tint); text-decoration: none; }
+.deadline { font-size: 12px; color: var(--hint); text-align: center; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="title">{{ title }}</div>
+    <div class="desc" id="ev-desc"></div>
+
+    <div class="success-card" id="success">✅ Bet placed!</div>
+
+    <!-- Options + pool -->
+    <div class="card">
+        <div class="pool-header">
+            <div>
+                <div class="pool-label">Total Pool</div>
+                <div class="pool-total" id="total-pool">—</div>
+            </div>
+            <div class="pool-meta" id="countdown"></div>
+        </div>
+        <div class="option-list" id="option-list">
+            <!-- rendered by JS -->
+        </div>
+    </div>
+
+    <!-- Bet card -->
+    <div class="card bet-section" id="bet-card">
+        <div class="balance">
+            <span class="label">Your balance</span>
+            <span class="value" id="balance">— USDT</span>
+        </div>
+        <div class="selected-label" id="selected-label">Tap an option above to bet.</div>
+
+        <input type="number" class="amount-input" id="amount" placeholder="Amount in USDT"
+               step="0.01" min="1" inputmode="decimal">
+        <div class="amounts">
+            <button class="btn-amt" data-v="1" type="button">1U</button>
+            <button class="btn-amt" data-v="5" type="button">5U</button>
+            <button class="btn-amt" data-v="10" type="button">10U</button>
+            <button class="btn-amt" data-v="25" type="button">25U</button>
+            <button class="btn-amt" data-v="100" type="button">100U</button>
+        </div>
+        <div class="estimate" id="estimate">Pick an option and amount.</div>
+        <div class="alert" id="alert"></div>
+    </div>
+
+    <!-- Transparency card -->
+    <div class="wallet-card" id="wallet-card" style="display:none">
+        🔒 Pool funds are held in a public TRC20 address.<br>
+        <span id="wallet-balance"></span>
+        <a href="#" id="wallet-link" target="_blank">View on Tronscan ↗</a>
+    </div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const EVENT_ID = {{ event_id }};
+const initData = tg?.initData || "";
+const POLL_MS = 10000;
+
+let evState = null;
+let chosenOpt = null;
+let chosenAmount = 0;
+let pollTimer = null;
+
+const $ = id => document.getElementById(id);
+const fmt = m => (m / 1e6).toFixed(2);
+const fmtOdds = v => v > 0 ? v.toFixed(2) + 'x' : 'N/A';
+
+async function fetchEvent() {
+    try {
+        const r = await fetch(`/miniapp/api/multi/${EVENT_ID}`);
+        evState = await r.json();
+        renderEvent();
+        renderWallet();
+    } catch (e) { console.error(e); }
+}
+
+async function fetchMe() {
+    try {
+        const r = await fetch(`/miniapp/api/me`, {
+            headers: { "x-telegram-init-data": initData }
+        });
+        if (!r.ok) { $('balance').textContent = '— USDT (auth)'; return; }
+        const me = await r.json();
+        $('balance').textContent = `${fmt(me.balance_micro)} USDT`;
+    } catch (e) { }
+}
+
+function renderEvent() {
+    if (!evState) return;
+    $('ev-desc').textContent = evState.description || '';
+    $('total-pool').textContent = `${(evState.total_pool_micro / 1e6).toLocaleString('en', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USDT`;
+
+    // Countdown
+    const ms = new Date(evState.close_at).getTime() - Date.now();
+    if (ms <= 0) {
+        $('countdown').textContent = '🔒 Closed';
+    } else {
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        $('countdown').textContent = `⏰ ${h}h ${m}m left`;
+    }
+
+    // Options
+    const list = $('option-list');
+    list.innerHTML = '';
+    const opts = evState.options || [];
+    const totalPool = evState.total_pool_micro || 1;
+
+    opts.forEach(opt => {
+        const isWinner = opt.is_winner;
+        const selected = chosenOpt === opt.opt_key;
+        const color = opt.color || '#8e8e93';
+        const share = opt.share || 0;
+        const pct = Math.round(share * 100);
+
+        const oracleStr = opt.current_usd != null
+            ? `💹 $${Number(opt.current_usd).toLocaleString('en', {maximumFractionDigits: 0})}`
+            : '';
+
+        const row = document.createElement('div');
+        row.className = `option-row${selected ? ' selected' : ''}${isWinner ? ' winner' : ''}`;
+        row.dataset.optKey = opt.opt_key;
+        row.innerHTML = `
+            <div class="option-dot" style="background:${color}"></div>
+            <div style="flex:1">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span class="option-label">${opt.label}</span>
+                    <span class="option-odds" style="color:${color}">${fmtOdds(opt.odds)}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:2px">
+                    <span class="option-pool">${(opt.pool_usdt || 0).toFixed(2)} U · ${pct}%</span>
+                    <span class="option-oracle">${oracleStr}</span>
+                </div>
+                <div class="option-bar-wrap">
+                    <div class="option-bar-bg">
+                        <div class="option-bar-fill" style="width:${pct}%;background:${color}"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        row.addEventListener('click', () => selectOpt(opt.opt_key, opt.label));
+        list.appendChild(row);
+    });
+
+    updateEstimate();
+}
+
+function renderWallet() {
+    if (!evState || !evState.wallet || !evState.wallet.ok) return;
+    const w = evState.wallet;
+    $('wallet-card').style.display = 'block';
+    $('wallet-balance').textContent = `Hot wallet: ${w.balance_usdt.toFixed(2)} USDT · `;
+    const link = $('wallet-link');
+    link.href = w.tronscan_url;
+    link.textContent = w.address ? `${w.address.slice(0,8)}…${w.address.slice(-6)} ↗` : 'View on Tronscan ↗';
+}
+
+function selectOpt(optKey, label) {
+    chosenOpt = optKey;
+    $('selected-label').innerHTML = `Betting on: <strong>${label}</strong>`;
+    document.querySelectorAll('.option-row').forEach(r => {
+        r.classList.toggle('selected', r.dataset.optKey === optKey);
+    });
+    updateEstimate();
+    confirmIfReady();
+}
+
+function updateEstimate() {
+    if (!evState || !chosenOpt || !chosenAmount) {
+        $('estimate').textContent = 'Pick an option and amount to see your potential payout.';
+        return;
+    }
+    const opts = evState.options || [];
+    const opt = opts.find(o => o.opt_key === chosenOpt);
+    if (!opt) return;
+
+    const amt = chosenAmount * 1e6;
+    const FEE_BPS = evState.fee_bps || 500;
+
+    // Compute payout estimate locally
+    let totalNew = evState.total_pool_micro + amt;
+    let ownPool = opt.pool_micro + amt;
+    let payoutPool = Math.floor(totalNew * (10000 - FEE_BPS) / 10000);
+    let payout = ownPool > 0 ? Math.floor(payoutPool * amt / ownPool) : 0;
+    let profit = payout - amt;
+
+    $('estimate').innerHTML =
+        `If <strong>${opt.label}</strong> wins: receive <strong>${fmt(payout)} USDT</strong>` +
+        ` (+${fmt(profit)} USDT profit).`;
+}
+
+function setAmount(v, fromInput = false) {
+    chosenAmount = v;
+    document.querySelectorAll('.btn-amt').forEach(b => {
+        b.classList.toggle('active', parseFloat(b.dataset.v) === v);
+    });
+    if (!fromInput) $('amount').value = v;
+    updateEstimate();
+    confirmIfReady();
+}
+
+async function placeBet() {
+    if (!chosenOpt || !chosenAmount) return;
+    if (!initData) {
+        $('alert').textContent = 'Please open from Telegram bot.';
+        return;
+    }
+    $('alert').textContent = '';
+    try {
+        const r = await fetch(`/miniapp/api/bet/multi/${EVENT_ID}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-telegram-init-data': initData,
+            },
+            body: JSON.stringify({ opt_key: chosenOpt, amount: chosenAmount }),
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) {
+            $('alert').textContent = data.error || 'Bet failed';
+            tg?.HapticFeedback?.notificationOccurred?.('error');
+            return;
+        }
+        tg?.HapticFeedback?.notificationOccurred?.('success');
+        $('success').style.display = 'block';
+        setTimeout(() => $('success').style.display = 'none', 2200);
+        await Promise.all([fetchEvent(), fetchMe()]);
+    } catch (e) {
+        $('alert').textContent = 'Network error';
+    }
+}
+
+function confirmIfReady() {
+    if (!tg) return;
+    if (chosenOpt && chosenAmount > 0) {
+        const opts = evState?.options || [];
+        const opt = opts.find(o => o.opt_key === chosenOpt);
+        const label = opt ? opt.label.split(' (')[0] : chosenOpt.toUpperCase();
+        tg.MainButton.setText(`Bet ${chosenAmount} USDT → ${label}`);
+        tg.MainButton.show();
+    } else {
+        tg.MainButton.hide();
+    }
+}
+
+// Wire up amount buttons
+document.querySelectorAll('.btn-amt').forEach(b => {
+    b.addEventListener('click', () => setAmount(parseFloat(b.dataset.v)));
+});
+$('amount').addEventListener('input', e => setAmount(parseFloat(e.target.value) || 0, true));
+tg?.onEvent('mainButtonClicked', placeBet);
+
+// Boot
+fetchEvent(); fetchMe();
+pollTimer = setInterval(() => { fetchEvent(); fetchMe(); }, POLL_MS);
+</script>
+</body>
+</html>

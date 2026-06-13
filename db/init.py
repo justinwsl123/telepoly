@@ -21,6 +21,10 @@ def main() -> None:
     Base.metadata.create_all(engine)
     logger.success(f"DB initialized at {settings.database_url}")
 
+    # 对已有 DB 补丁新列（新部署 create_all 已处理，旧 DB 需要 ALTER TABLE）
+    from db.migrate import run_migrations
+    run_migrations(engine)
+
 
 if __name__ == "__main__":
     main()

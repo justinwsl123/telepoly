@@ -86,6 +86,84 @@ async def cleanup_snapshots(ctx: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warning(f"snapshot cleanup failed: {e}")
 
 
+# ----------------------------- WC Contest Oracle 结算 -----------------------------
+
+async def auto_settle_wc_contest(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    世界杯 AI 模型竞猜自动结算。
+
+    条件（全部满足才执行）：
+      1. 存在 kind="multi" 且标题包含"世界杯"的事件
+      2. 事件状态为 "locked"（已封盘，close_at 已过）
+      3. Oracle 能返回胜者
+      4. 仅在 main bot 实例运行（避免矩阵重复）
+    """
+    if settings.bot_id != "main":
+        return
+
+    from datetime import datetime, timezone
+    from sqlalchemy import select as sa_select
+
+    from db.models import Event
+    from core.multi_settlement import settle_multi_event
+    from integrations.oracle import resolve_winning_model
+
+    now = datetime.now(timezone.utc)
+
+    with get_session() as s:
+        evs = list(s.scalars(
+            sa_select(Event).where(
+                Event.kind == "multi",
+                Event.state == "locked",
+            )
+        ))
+        # 只处理标题含"世界杯"且截止时间已过的竞猜
+        target = None
+        for ev in evs:
+            if "世界杯" in (ev.title or "") and ev.close_at <= now.replace(tzinfo=None):
+                target = ev
+                break
+
+        if not target:
+            return
+
+        logger.info(f"[wc_contest] event#{target.id} is locked, querying Oracle…")
+        winning_opt = resolve_winning_model()
+        if not winning_opt:
+            logger.warning("[wc_contest] Oracle returned None, skipping settlement")
+            return
+
+        try:
+            summary = settle_multi_event(
+                s, target, winning_opt,
+                evidence_url="https://telegrowth.ai/vb_accounts",
+            )
+            logger.success(
+                f"[wc_contest] settled event#{target.id} → winner={winning_opt} "
+                f"winners={summary['winners']} fee={summary['fee_micro']}"
+            )
+        except Exception as e:
+            logger.error(f"[wc_contest] settlement failed: {e}")
+            return
+
+    # 发公告
+    if settings.announce_channel_id:
+        try:
+            await ctx.bot.send_message(
+                chat_id=settings.announce_channel_id,
+                text=(
+                    f"🏆 *世界杯 AI 擂台竞猜 — 已结算！*\n\n"
+                    f"获胜模型：*{winning_opt.upper()}*\n"
+                    f"赢家数量：{summary.get('winners', 0)}\n"
+                    f"总池手续费：{summary.get('fee_micro', 0) / 1_000_000:.2f} USDT\n\n"
+                    f"🔗 证据：https://telegrowth.ai/vb_accounts"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.warning(f"[wc_contest] announce failed: {e}")
+
+
 async def hall_of_fame_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """每天 23:00 UTC 推 Top 3 赢家到频道（仅主 bot 实例发，避免矩阵重复）。"""
     if settings.bot_id != "main":
@@ -118,3 +196,5 @@ def register_jobs(app) -> None:
     jq.run_daily(daily_event_check, time=time(9, 0, tzinfo=timezone.utc), name="daily_event_check")
     jq.run_daily(hall_of_fame_job, time=time(23, 0, tzinfo=timezone.utc), name="hall_of_fame")
     jq.run_daily(cleanup_snapshots, time=time(3, 0, tzinfo=timezone.utc), name="cleanup_snapshots")
+    # 世界杯 AI 竞猜自动结算（每小时检查一次，截止后用 Oracle 结算）
+    jq.run_repeating(auto_settle_wc_contest, interval=3600, first=120, name="auto_settle_wc_contest")

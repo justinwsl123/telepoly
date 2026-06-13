@@ -91,6 +91,14 @@ async def event_page(request: Request, event_id: int):
         ev = s.get(Event, event_id)
         if not ev:
             raise HTTPException(404, "event not found")
+        ev_kind = ev.kind
+    # 多选项竞猜走独立模板
+    if ev_kind == "multi":
+        return mp_templates.TemplateResponse(request, "miniapp_multi_event.html", {
+            "event_id": event_id,
+            "title": ev.title,
+            "bot_username": settings.telepoly_bot_username,
+        })
     return mp_templates.TemplateResponse(request, "miniapp_event.html", {
         "event_id": event_id,
         "title": ev.title,
@@ -189,4 +197,123 @@ async def api_bet(event_id: int, request: Request):
             "bet_id": bet.id,
             "balance_micro": u.balance_micro,
             "estimated_payout_micro": est_payout,
+        }
+
+
+# ----------------------------- Multi-event API -----------------------------
+
+@router.get("/api/multi/{event_id}")
+async def api_multi_event(event_id: int):
+    """
+    返回 multi 事件的所有选项、实时赔率和 Oracle 模型排名。
+    包含热钱包 Tronscan 链接（透明度）。
+    """
+    from sqlalchemy import select as sa_select
+    from db.models import EventOption
+    from core.multi_betting import implied_odds_multi
+
+    with get_session() as s:
+        ev = s.get(Event, event_id)
+        if not ev:
+            raise HTTPException(404)
+        opts = list(s.scalars(
+            sa_select(EventOption)
+            .where(EventOption.event_id == event_id)
+            .order_by(EventOption.sort_order)
+        ))
+        option_pools = {o.opt_key: o.pool_micro for o in opts}
+        odds_map = implied_odds_multi(option_pools, ev.fee_bps)
+        total_pool = sum(option_pools.values())
+
+    # Oracle 实时排名（失败返回空）
+    standings: list[dict] = []
+    try:
+        from integrations.oracle import model_standings
+        standings = model_standings()
+    except Exception:
+        pass
+    standings_map = {s["opt_key"]: s.get("current_usd", 0) for s in standings}
+
+    # 热钱包透明度
+    wallet_info: dict = {}
+    try:
+        from integrations.wallet_public import get_hot_wallet_usdt_balance
+        wallet_info = get_hot_wallet_usdt_balance()
+    except Exception:
+        pass
+
+    options_out = []
+    for o in opts:
+        options_out.append({
+            "opt_key":      o.opt_key,
+            "label":        o.label,
+            "color":        o.color,
+            "pool_micro":   o.pool_micro,
+            "pool_usdt":    o.pool_micro / 1_000_000,
+            "share":        (o.pool_micro / total_pool) if total_pool > 0 else 0,
+            "odds":         odds_map.get(o.opt_key, 0.0),
+            "is_winner":    o.is_winner,
+            "current_usd":  standings_map.get(o.opt_key),  # None if oracle unavailable
+        })
+
+    return {
+        "id":           ev.id,
+        "title":        ev.title,
+        "description":  ev.description,
+        "kind":         ev.kind,
+        "state":        ev.state,
+        "outcome":      ev.outcome,
+        "total_pool_micro": total_pool,
+        "fee_bps":      ev.fee_bps,
+        "close_at":     ev.close_at.isoformat() + "Z",
+        "options":      options_out,
+        "standings":    standings,
+        "wallet":       wallet_info,
+    }
+
+
+@router.post("/api/bet/multi/{event_id}")
+async def api_bet_multi(event_id: int, request: Request):
+    """多选项下注 API。body: {opt_key, amount}"""
+    user_view = _user_from_request(request)
+    if not user_view:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    body = await request.json()
+    opt_key = (body.get("opt_key") or "").lower().strip()
+    try:
+        amount_usdt = float(body.get("amount") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "invalid amount"}, status_code=400)
+
+    from sqlalchemy import select as sa_select
+    from core.multi_betting import MultiBetError, place_bet_multi
+
+    with get_session() as s:
+        ev = s.get(Event, event_id)
+        if not ev:
+            return JSONResponse({"error": "event not found"}, status_code=404)
+        u = s.scalars(sa_select(User).where(User.tg_user_id == user_view.tg_user_id)).first()
+        if not u:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        try:
+            bet = place_bet_multi(s, user=u, event=ev, opt_key=opt_key,
+                                  amount_micro=usdt_to_micro(amount_usdt))
+        except MultiBetError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+        from db.models import EventOption
+        from sqlalchemy import select as sa_select2
+        opts = list(s.scalars(sa_select2(EventOption).where(EventOption.event_id == event_id)))
+        total = sum(o.pool_micro for o in opts)
+        payout_pool = total * (10_000 - ev.fee_bps) // 10_000
+        winning_pool = next((o.pool_micro for o in opts if o.opt_key == opt_key), 0)
+        est_payout = payout_pool * bet.amount_micro // winning_pool if winning_pool else 0
+
+        return {
+            "ok":                      True,
+            "bet_id":                  bet.id,
+            "balance_micro":           u.balance_micro,
+            "estimated_payout_micro":  est_payout,
         }

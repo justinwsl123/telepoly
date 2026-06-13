@@ -18,6 +18,7 @@ from db.init import main as init_db
 from scheduler.jobs import register_jobs
 from telepoly_bot.config import settings
 from telepoly_bot.handlers import admin, event, me, referral, start, wallet
+from telepoly_bot.handlers import multi_event
 
 
 # Shown in the Telegram blue "Menu" button next to the text input.
@@ -63,6 +64,7 @@ def build_app() -> Application:
 
     start.register(app)
     event.register(app)
+    multi_event.register(app)
     me.register(app)
     wallet.register(app)
     referral.register(app)
