@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     crypto_pay_token: str = Field(default="", alias="CRYPTO_PAY_TOKEN")
     telegrowth_db_url: str = Field(default="", alias="TELEGROWTH_DB_URL")
     telepoly_bot_matrix: str = Field(default="", alias="TELEPOLY_BOT_MATRIX")
+    # Oracle 读 BETScope 公开净值 API（无需暴露 TeleGrowth 本地 DB）
+    valuebet_public_api_url: str = Field(
+        default="https://app.betscope.cc", alias="VALUEBET_PUBLIC_API_URL"
+    )
 
     @cached_property
     def owner_ids(self) -> set[int]:

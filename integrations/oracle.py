@@ -1,15 +1,15 @@
-"""Oracle · 从 TeleGrowth DB 读取 AI 模型净值，决定世界杯竞猜赢家。
+"""Oracle · 读取 AI 模型净值，决定世界杯竞猜赢家。
 
-使用方式：
-  from integrations.oracle import resolve_winning_model, model_standings
+数据源（优先级）：
+  1. BETScope 公开净值 API（推荐）：GET {VALUEBET_PUBLIC_API_URL}/api/public/lab/summary
+     返回 accounts:[{model_id, current_usd, status, ...}]，无需暴露 TeleGrowth 本地 DB。
+  2. 兜底：若配置了 TELEGROWTH_DB_URL，直接读 vb_accounts（同机部署时用）。
 
-需要环境变量：
-  TELEGROWTH_DB_URL — 指向 TeleGrowth 数据库的连接串（同 telegrowth.py）
-
-若未配置 TELEGROWTH_DB_URL，函数返回 None / 空列表（no-op）。
+两个数据源都拿不到时返回 None / 空列表（no-op，不会误结算）。
 """
 from __future__ import annotations
 
+import httpx
 from loguru import logger
 from sqlalchemy import create_engine, text
 
@@ -30,71 +30,95 @@ MODEL_ID_MAP: dict[str, str] = {
 OPT_KEY_MAP = {v: k for k, v in MODEL_ID_MAP.items()}
 
 
+# ----------------------------- 数据源 1：BETScope 公开 API -----------------------------
+def _fetch_accounts_from_api() -> list[dict] | None:
+    """从 BETScope 公开 summary API 拉 accounts。失败返回 None（让调用方回退 DB）。"""
+    base = (settings.valuebet_public_api_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    url = f"{base}/api/public/lab/summary"
+    try:
+        with httpx.Client(timeout=15) as client:
+            r = client.get(url)
+            r.raise_for_status()
+            data = r.json()
+        if not data.get("ok", True):
+            logger.warning(f"oracle: summary api not ok: {data.get('error')}")
+            return None
+        accounts = data.get("accounts") or (data.get("summary") or {}).get("accounts")
+        if not isinstance(accounts, list):
+            logger.warning("oracle: summary api missing 'accounts'")
+            return None
+        return accounts
+    except Exception as e:
+        logger.warning(f"oracle: public api fetch failed ({url}): {e}")
+        return None
+
+
+# ----------------------------- 数据源 2：TeleGrowth DB 兜底 -----------------------------
 def _engine():
     if not settings.telegrowth_db_url:
         return None
     return create_engine(settings.telegrowth_db_url, future=True)
 
 
-def resolve_winning_model() -> str | None:
-    """
-    查询 TeleGrowth vb_accounts，返回净值最高的模型对应的 opt_key。
-    平局时取 current_usd 最高的第一条（ORDER BY DESC LIMIT 1）。
-    未配置 TELEGROWTH_DB_URL 时返回 None。
-    """
+def _fetch_accounts_from_db() -> list[dict] | None:
     eng = _engine()
     if not eng:
-        logger.warning("oracle: TELEGROWTH_DB_URL not set, cannot resolve winner")
         return None
-    try:
-        with eng.connect() as conn:
-            row = conn.execute(text(
-                "SELECT model_id, current_usd FROM vb_accounts "
-                "WHERE status='active' ORDER BY current_usd DESC LIMIT 1"
-            )).first()
-        if not row:
-            logger.warning("oracle: vb_accounts returned no rows")
-            return None
-        model_id = row[0]
-        opt_key = MODEL_ID_MAP.get(model_id)
-        if not opt_key:
-            logger.warning(f"oracle: unknown model_id '{model_id}', no opt_key mapping")
-            return None
-        logger.info(f"oracle: winner model_id={model_id} opt_key={opt_key} usd={row[1]:.2f}")
-        return opt_key
-    except Exception as e:
-        logger.error(f"oracle: query failed: {e}")
-        return None
-
-
-def model_standings() -> list[dict]:
-    """
-    返回 6 个模型的当前净值排名（降序）。
-    每条：{"opt_key": "gpt", "model_id": "openai/gpt-5.5", "current_usd": 12345.67, "rank": 1}
-    未配置 TELEGROWTH_DB_URL 时返回空列表。
-    """
-    eng = _engine()
-    if not eng:
-        return []
-    model_ids = list(MODEL_ID_MAP.keys())
-    placeholders = ", ".join(f"'{mid}'" for mid in model_ids)
     try:
         with eng.connect() as conn:
             rows = conn.execute(text(
-                f"SELECT model_id, current_usd FROM vb_accounts "
-                f"WHERE status='active' AND model_id IN ({placeholders}) "
-                f"ORDER BY current_usd DESC"
+                "SELECT model_id, current_usd, status FROM vb_accounts"
             )).fetchall()
-        result = []
-        for rank, row in enumerate(rows, start=1):
-            opt_key = MODEL_ID_MAP.get(row[0], row[0])
-            result.append({
-                "opt_key":     opt_key,
-                "model_id":    row[0],
-                "current_usd": float(row[1]),
-                "rank":        rank,
-            })
-        return result
+        return [{"model_id": r[0], "current_usd": r[1], "status": r[2]} for r in rows]
     except Exception as e:
-        logger.error(f"oracle: model_standings query failed: {e}")
-        return []
+        logger.error(f"oracle: db fetch failed: {e}")
+        return None
+
+
+def _load_accounts() -> list[dict]:
+    """优先公开 API，失败回退本地 DB；都没有则返回空。"""
+    accts = _fetch_accounts_from_api()
+    if accts is None:
+        accts = _fetch_accounts_from_db()
+    return accts or []
+
+
+def _ranked_active(accounts: list[dict]) -> list[dict]:
+    """筛 active + 已知模型，按 current_usd 降序。"""
+    out = []
+    for a in accounts:
+        mid = a.get("model_id")
+        if mid not in MODEL_ID_MAP:
+            continue
+        if (a.get("status") or "active") != "active":
+            continue
+        try:
+            usd = float(a.get("current_usd") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        out.append({"model_id": mid, "opt_key": MODEL_ID_MAP[mid], "current_usd": usd})
+    out.sort(key=lambda x: x["current_usd"], reverse=True)
+    return out
+
+
+def resolve_winning_model() -> str | None:
+    """返回净值最高的模型对应的 opt_key。平局取最高的第一条。拿不到数据返回 None。"""
+    ranked = _ranked_active(_load_accounts())
+    if not ranked:
+        logger.warning("oracle: no active accounts resolved (api+db both empty)")
+        return None
+    win = ranked[0]
+    logger.info(f"oracle: winner model_id={win['model_id']} opt_key={win['opt_key']} usd={win['current_usd']:.2f}")
+    return win["opt_key"]
+
+
+def model_standings() -> list[dict]:
+    """返回 6 模型当前净值排名（降序）：[{opt_key, model_id, current_usd, rank}]。"""
+    ranked = _ranked_active(_load_accounts())
+    return [
+        {"opt_key": r["opt_key"], "model_id": r["model_id"],
+         "current_usd": r["current_usd"], "rank": i}
+        for i, r in enumerate(ranked, start=1)
+    ]
