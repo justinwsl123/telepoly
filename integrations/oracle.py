@@ -22,7 +22,7 @@ MODEL_ID_MAP: dict[str, str] = {
     "claude-opus-4-7":                "claude",
     "google/gemini-3.1-pro":          "gemini",
     "qwen/qwen3.7-max":               "qwen",
-    "deepseek/deepseek-v4-flash":     "deepseek",
+    "deepseek/deepseek-v4-pro":       "deepseek",
     "moonshotai/kimi-k2.6":           "kimi",
 }
 
